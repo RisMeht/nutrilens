@@ -13,13 +13,9 @@ export const toNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-// A handful of core nutrients Open Food Facts populates with a "_serving" suffix
-// whenever it actually knows the serving weight, independent of serving_size text.
-const CORE_NUTRIENT_KEYS = ["energy-kcal", "proteins", "carbohydrates", "fat", "sugars", "sodium", "saturated-fat", "fiber"];
-
-export const hasServingNutrientData = (nutriments: Record<string, unknown>) =>
-  CORE_NUTRIENT_KEYS.some((key) => nutriments[`${key}_serving`] !== undefined && nutriments[`${key}_serving`] !== null);
-
+// Only used for the small "serving ≈ Xkcal" annotation — the actual displayed and scored
+// nutrition always comes from nutrientPer100g below, so a missing/unparsable serving size
+// just means no annotation, never a wrong or mislabeled number.
 export const parseServing = (servingSize: unknown, servingQuantity: unknown) => {
   const fromQuantity = toNumber(servingQuantity);
   if (fromQuantity > 0) {
@@ -31,20 +27,6 @@ export const parseServing = (servingSize: unknown, servingQuantity: unknown) => 
   const match = value.match(/(\d+(?:[.,]\d+)?)\s*(g|gram|grams|ml|milliliter|milliliters)/i);
   const amount = match ? toNumber(match[1]) : 0;
   return { label: value, grams: amount > 0 ? amount : 0 };
-};
-
-// Resolves one nutrient to an actual per-serving amount. Only trusts a serving-basis
-// number when Open Food Facts gives us real serving data (a direct "_serving" field,
-// or a serving weight we can multiply the per-100g figure by) — otherwise returns null
-// rather than silently passing off per-100g data as "one serving".
-export const nutrientPerServing = (nutriments: Record<string, unknown>, key100g: string, keyServing: string, servingGrams: number) => {
-  const rawServing = nutriments[keyServing];
-  if (rawServing !== undefined && rawServing !== null) return toNumber(rawServing);
-  if (servingGrams > 0) {
-    const per100 = toNumber(nutriments[key100g]);
-    return (per100 * servingGrams) / 100;
-  }
-  return null;
 };
 
 export const nutrientPer100g = (nutriments: Record<string, unknown>, key100g: string) => toNumber(nutriments[key100g]);

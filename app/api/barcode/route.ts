@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { fetchOpenFoodFactsProduct, findBetterSwaps } from "../../../lib/openfoodfacts";
-import { buildHealthScore, hasServingNutrientData, nutrientPer100g, nutrientPerServing, parseServing, toNumber } from "../../../lib/nutrition";
+import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl } from "../../../lib/openfoodfacts";
+import { buildHealthScore, nutrientPer100g, toNumber } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
   const rawCode = new URL(request.url).searchParams.get("code") || "";
@@ -23,27 +23,19 @@ export async function GET(request: Request) {
       concerns: ["This barcode may belong to a non-food item or a product missing from public records."],
       alternatives: [],
       caution: "No Open Food Facts entry was found for this barcode.",
-      facts: [{ label: "Barcode", value: code }],
+      facts: [],
       code
     });
   }
 
   const nutriments = (product.nutriments || {}) as Record<string, unknown>;
   const ingredientsText = (product.ingredients_text_en || product.ingredients_text || "").toString().trim();
-  const ingredients = ingredientsText
-    .split(/[,;]+/)
-    .map((item: string) => item.trim())
-    .filter(Boolean);
 
-  // Nutrition is only shown "per serving" when Open Food Facts actually knows a serving
-  // weight or gives direct per-serving nutrient fields. Otherwise we show honest per-100g
-  // values instead of fabricating a serving size — that mislabeling is what made scans
-  // look wildly wrong (e.g. showing a full 100g of a spread as if it were "one serving").
-  const serving = parseServing(product.serving_size, product.serving_quantity);
-  const useServingBasis = serving.grams > 0 || hasServingNutrientData(nutriments);
-  const servingLabel = useServingBasis ? serving.label || `${serving.grams}g serving` : (product.product_quantity_unit === "ml" ? "100ml" : "100g");
-  const servingGrams = serving.grams;
-
+  // Every number shown and scored comes from one canonical basis — per 100g/100ml, the one
+  // figure Open Food Facts reliably has for every product. Serving size is frequently missing,
+  // unparsable, or only partially populated (some nutrients have a "_serving" field, others
+  // don't) — mixing bases per-nutrient is exactly what made scans show wrong numbers before.
+  // When a real serving weight IS known, it's surfaced as a simple secondary annotation only.
   const per100 = {
     energy: nutrientPer100g(nutriments, "energy-kcal_100g") || toNumber(nutriments.energy_kcal),
     protein: nutrientPer100g(nutriments, "proteins_100g"),
@@ -52,26 +44,9 @@ export async function GET(request: Request) {
     sugar: nutrientPer100g(nutriments, "sugars_100g"),
     satFat: nutrientPer100g(nutriments, "saturated-fat_100g"),
     fiber: nutrientPer100g(nutriments, "fiber_100g"),
-    sodiumMg: nutrientPer100g(nutriments, "sodium_100g") * 1000
+    // Sodium falls back to salt/2.5 (the standard conversion) since some entries only carry salt.
+    sodiumMg: (nutrientPer100g(nutriments, "sodium_100g") || nutrientPer100g(nutriments, "salt_100g") / 2.5) * 1000
   };
-
-  // nutrientPerServing returns sodium in grams (same unit as the raw field), so it's
-  // converted to mg separately from the rest of the per-serving figures below.
-  const sodiumGPerServing = nutrientPerServing(nutriments, "sodium_100g", "sodium_serving", servingGrams);
-
-  const display = useServingBasis
-    ? {
-        energy: nutrientPerServing(nutriments, "energy-kcal_100g", "energy-kcal_serving", servingGrams) ?? per100.energy,
-        protein: nutrientPerServing(nutriments, "proteins_100g", "proteins_serving", servingGrams) ?? per100.protein,
-        carbs: nutrientPerServing(nutriments, "carbohydrates_100g", "carbohydrates_serving", servingGrams) ?? per100.carbs,
-        fat: nutrientPerServing(nutriments, "fat_100g", "fat_serving", servingGrams) ?? per100.fat,
-        sugar: nutrientPerServing(nutriments, "sugars_100g", "sugars_serving", servingGrams) ?? per100.sugar,
-        satFat: nutrientPerServing(nutriments, "saturated-fat_100g", "saturated-fat_serving", servingGrams) ?? per100.satFat,
-        fiber: nutrientPerServing(nutriments, "fiber_100g", "fiber_serving", servingGrams) ?? per100.fiber
-      }
-    : per100;
-
-  const sodiumMgDisplay = useServingBasis ? (sodiumGPerServing ?? per100.sodiumMg / 1000) * 1000 : per100.sodiumMg;
 
   const additivesCount = Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n);
   const novaGroup = toNumber(product.nova_group);
@@ -81,7 +56,10 @@ export async function GET(request: Request) {
       nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
   );
 
-  // The score always runs on per-100g density (see lib/nutrition.ts), regardless of what basis is displayed.
+  // This is an instant, deterministic placeholder score (Nutri-Score points + a NOVA
+  // adjustment) shown immediately. app/api/barcode/enrich/route.ts replaces it moments
+  // later with a holistic score from Gemini, which can weigh context a rigid formula can't
+  // (e.g. a high-protein, low-sugar bar shouldn't be marked down just for being packaged).
   const { score, grade } = buildHealthScore({
     sugarPer100g: per100.sugar,
     sodiumMgPer100g: per100.sodiumMg,
@@ -93,62 +71,57 @@ export async function GET(request: Request) {
     fruitVegPct
   });
 
-  // "High in" thresholds: FSA per-100g cutoffs when showing per-100g, FDA-style 20%-DV
-  // per-serving cutoffs when a real serving size is known — either way the wording matches the numbers shown.
-  const sugarLimit = useServingBasis ? 12 : 22.5;
-  const sodiumLimit = useServingBasis ? 500 : 600;
-  const satFatLimit = useServingBasis ? 5 : 5;
-  const basisWord = useServingBasis ? "serving" : "100g";
-
+  // FSA "high in" per-100g cutoffs.
   const concerns: string[] = [];
-  if (display.sugar >= sugarLimit) concerns.push(`High sugar per ${basisWord}: ${display.sugar.toFixed(1)}g.`);
-  if (sodiumMgDisplay >= sodiumLimit) concerns.push(`High sodium per ${basisWord}: ${Math.round(sodiumMgDisplay)}mg.`);
-  if (display.satFat >= satFatLimit) concerns.push(`High saturated fat per ${basisWord}: ${display.satFat.toFixed(1)}g.`);
+  if (per100.sugar >= 22.5) concerns.push(`High sugar: ${per100.sugar.toFixed(1)}g per 100g.`);
+  if (per100.sodiumMg >= 600) concerns.push(`High sodium: ${Math.round(per100.sodiumMg)}mg per 100g.`);
+  if (per100.satFat >= 5) concerns.push(`High saturated fat: ${per100.satFat.toFixed(1)}g per 100g.`);
   if (additivesCount >= 3) concerns.push(`${additivesCount} additives listed.`);
-  if (!ingredientsText) concerns.push("Ingredient list is incomplete in the source database.");
 
   const productName =
     (typeof product.product_name === "string" && product.product_name.trim()) ||
     (typeof product.product_name_en === "string" && product.product_name_en.trim()) ||
     "Scanned product";
 
-  const alternatives = await findBetterSwaps({
-    productName,
-    productCode: code,
-    categories: product.categories_tags,
-    sugarPer100g: per100.sugar,
-    sodiumMgPer100g: per100.sodiumMg,
-    satFatPer100g: per100.satFat,
-    energyPer100g: per100.energy
-  });
+  const alternatives = (
+    await findBetterSwaps({
+      productName,
+      productCode: code,
+      categories: product.categories_tags,
+      sugarPer100g: per100.sugar,
+      sodiumMgPer100g: per100.sodiumMg,
+      satFatPer100g: per100.satFat,
+      energyPer100g: per100.energy
+    })
+  ).slice(0, 3);
 
   const facts = [
-    { label: "Basis", value: useServingBasis ? servingLabel : `Per ${servingLabel} (no serving size listed)` },
-    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g / ${basisWord}` },
-    { label: "Sodium", value: `${Math.round(sodiumMgDisplay)}mg / ${basisWord}` },
-    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g / ${basisWord}` },
-    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g / ${basisWord}` },
-    { label: "Additives", value: `${additivesCount || 0}` },
-    { label: "Ingredients", value: `${ingredients.length || 0}` }
+    { label: "Sugar", value: `${per100.sugar ? per100.sugar.toFixed(1) : "0"}g` },
+    { label: "Sodium", value: `${Math.round(per100.sodiumMg)}mg` },
+    { label: "Sat fat", value: `${per100.satFat ? per100.satFat.toFixed(1) : "0"}g` },
+    { label: "Fiber", value: `${per100.fiber ? per100.fiber.toFixed(1) : "0"}g` }
   ];
+
+  // Open Food Facts is community-edited, and fields like "quantity" occasionally contain
+  // garbage (e.g. "55unknown") — only surface it if it actually looks like a size/weight.
+  const brand = typeof product.brands === "string" ? product.brands.trim().split(",")[0].trim() : "";
+  const quantityText = typeof product.quantity === "string" ? product.quantity.trim() : "";
+  const quantity = /\d\s*(g|kg|mg|ml|cl|l|oz|lbs?|pcs?|x)\b/i.test(quantityText) ? quantityText : "";
+  const meta = [brand, quantity].filter(Boolean).join(" · ");
 
   return NextResponse.json({
     name: productName,
     category: "BARCODE",
     grade,
     score,
-    summary: useServingBasis
-      ? `Nutrition is calculated for ${servingLabel} using label data from Open Food Facts.`
-      : `This product's label doesn't list a serving size, so nutrition is shown per ${servingLabel}.`,
-    calories: Math.round(display.energy),
-    protein: Number(display.protein.toFixed(1)),
-    carbs: Number(display.carbs.toFixed(1)),
-    fat: Number(display.fat.toFixed(1)),
-    highlights: [
-      product.brands ? `Brand: ${product.brands}` : "Brand not listed",
-      product.quantity ? `Pack size: ${product.quantity}` : "Pack size missing",
-      useServingBasis ? `Serving: ${servingLabel}` : "Serving size not listed by the manufacturer"
-    ],
+    summary: "Nutrition shown per 100g of this product.",
+    meta,
+    image: productImageUrl(product),
+    calories: Math.round(per100.energy),
+    protein: Number(per100.protein.toFixed(1)),
+    carbs: Number(per100.carbs.toFixed(1)),
+    fat: Number(per100.fat.toFixed(1)),
+    highlights: [],
     concerns,
     alternatives,
     caution: ingredientsText

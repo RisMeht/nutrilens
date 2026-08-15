@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
-import { hasServingNutrientData, nutrientPer100g, nutrientPerServing, parseServing, toNumber } from "../../../../lib/nutrition";
+import { gradeForScore, nutrientPer100g, toNumber } from "../../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = `You are NutriLens AI for packaged food interpretation.
+const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's per-100g nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
-{"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
+{"score":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
 Rules:
-- Use only the provided nutrition and ingredient facts, and the exact basis (per-serving or per-100g) given — do not relabel per-100g figures as "per serving" or vice versa.
-- Do not invent nutrients, serving sizes, or medical claims.
-- Keep output concise, practical, and evidence-based.
-- Alternatives must be realistic healthier packaged swaps.`;
+- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper. Don't let one moderate number (e.g. saturated fat from a chocolate coating) tank an otherwise excellent product. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
+- Use only the provided nutrition and ingredient facts, all given per 100g/100ml. Do not invent nutrients, serving sizes, or medical claims.
+- Keep highlights/concerns short and concrete (cite actual numbers when useful), max 3 each. Only include a concern that's genuinely notable — don't pad the list.
+- Alternatives must be realistic healthier packaged swaps for the same type of product, max 3.`;
 
 export async function POST(request: Request) {
   const { code } = await request.json();
@@ -29,32 +29,16 @@ export async function POST(request: Request) {
   }
 
   const nutriments = (product.nutriments || {}) as Record<string, unknown>;
-  const serving = parseServing(product.serving_size, product.serving_quantity);
-  const useServingBasis = serving.grams > 0 || hasServingNutrientData(nutriments);
-  const servingGrams = serving.grams;
-  const basis = useServingBasis ? serving.label || "1 serving" : "100g (no serving size listed by the manufacturer)";
-
-  const nutrients = useServingBasis
-    ? {
-        calories: nutrientPerServing(nutriments, "energy-kcal_100g", "energy-kcal_serving", servingGrams) ?? nutrientPer100g(nutriments, "energy-kcal_100g"),
-        protein_g: nutrientPerServing(nutriments, "proteins_100g", "proteins_serving", servingGrams) ?? nutrientPer100g(nutriments, "proteins_100g"),
-        carbs_g: nutrientPerServing(nutriments, "carbohydrates_100g", "carbohydrates_serving", servingGrams) ?? nutrientPer100g(nutriments, "carbohydrates_100g"),
-        fat_g: nutrientPerServing(nutriments, "fat_100g", "fat_serving", servingGrams) ?? nutrientPer100g(nutriments, "fat_100g"),
-        sugar_g: nutrientPerServing(nutriments, "sugars_100g", "sugars_serving", servingGrams) ?? nutrientPer100g(nutriments, "sugars_100g"),
-        sodium_mg: (nutrientPerServing(nutriments, "sodium_100g", "sodium_serving", servingGrams) ?? nutrientPer100g(nutriments, "sodium_100g")) * 1000,
-        sat_fat_g: nutrientPerServing(nutriments, "saturated-fat_100g", "saturated-fat_serving", servingGrams) ?? nutrientPer100g(nutriments, "saturated-fat_100g"),
-        fiber_g: nutrientPerServing(nutriments, "fiber_100g", "fiber_serving", servingGrams) ?? nutrientPer100g(nutriments, "fiber_100g")
-      }
-    : {
-        calories: nutrientPer100g(nutriments, "energy-kcal_100g") || toNumber(nutriments.energy_kcal),
-        protein_g: nutrientPer100g(nutriments, "proteins_100g"),
-        carbs_g: nutrientPer100g(nutriments, "carbohydrates_100g"),
-        fat_g: nutrientPer100g(nutriments, "fat_100g"),
-        sugar_g: nutrientPer100g(nutriments, "sugars_100g"),
-        sodium_mg: nutrientPer100g(nutriments, "sodium_100g") * 1000,
-        sat_fat_g: nutrientPer100g(nutriments, "saturated-fat_100g"),
-        fiber_g: nutrientPer100g(nutriments, "fiber_100g")
-      };
+  const nutrients_per_100g = {
+    calories: nutrientPer100g(nutriments, "energy-kcal_100g") || toNumber(nutriments.energy_kcal),
+    protein_g: nutrientPer100g(nutriments, "proteins_100g"),
+    carbs_g: nutrientPer100g(nutriments, "carbohydrates_100g"),
+    fat_g: nutrientPer100g(nutriments, "fat_100g"),
+    sugar_g: nutrientPer100g(nutriments, "sugars_100g"),
+    sodium_mg: (nutrientPer100g(nutriments, "sodium_100g") || nutrientPer100g(nutriments, "salt_100g") / 2.5) * 1000,
+    sat_fat_g: nutrientPer100g(nutriments, "saturated-fat_100g"),
+    fiber_g: nutrientPer100g(nutriments, "fiber_100g")
+  };
 
   const context = {
     barcode: code,
@@ -63,8 +47,7 @@ export async function POST(request: Request) {
     ingredients_text: product.ingredients_text_en || product.ingredients_text || "",
     nova_group: product.nova_group || null,
     additives_count: Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n),
-    nutrition_basis: basis,
-    nutrients
+    nutrients_per_100g
   };
 
   const requestedModel = process.env.OPENROUTER_MODEL;
@@ -80,7 +63,7 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       model,
-      temperature: 0.15,
+      temperature: 0.2,
       max_tokens: 420,
       response_format: { type: "json_object" },
       messages: [
@@ -97,11 +80,14 @@ export async function POST(request: Request) {
     const content = data.choices?.[0]?.message?.content;
     const parsed = JSON.parse(content ?? "{}");
     const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
+    const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : null;
 
     return NextResponse.json({
-      summary: typeof parsed.summary === "string" ? parsed.summary : "AI insights are based on serving-size nutrition and ingredient quality.",
-      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.filter((item: unknown) => typeof item === "string").slice(0, 4) : [],
-      concerns: Array.isArray(parsed.concerns) ? parsed.concerns.filter((item: unknown) => typeof item === "string").slice(0, 4) : [],
+      score,
+      grade: score === null ? null : gradeForScore(score),
+      summary: typeof parsed.summary === "string" ? parsed.summary : "AI insights are based on per-100g nutrition and ingredient quality.",
+      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
+      concerns: Array.isArray(parsed.concerns) ? parsed.concerns.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
       alternatives,
       caution: typeof parsed.caution === "string" ? parsed.caution : "Nutrition advice is informational and not medical guidance."
     });

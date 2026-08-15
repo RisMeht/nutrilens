@@ -26,6 +26,12 @@ export const fetchOpenFoodFactsProduct = async (code: string) => {
   return null;
 };
 
+export const productImageUrl = (product: Record<string, unknown>): string => {
+  const candidates = [product.image_front_url, product.image_url, product.image_front_small_url, product.image_small_url];
+  const found = candidates.find((value): value is string => typeof value === "string" && value.length > 0);
+  return found || "";
+};
+
 const categoryOverlap = (a: unknown, b: unknown) => {
   const categoriesA = Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : [];
   const categoriesB = Array.isArray(b) ? b.filter((x): x is string => typeof x === "string") : [];

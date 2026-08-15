@@ -13,6 +13,8 @@ type Result = {
   score: number;
   grade: string;
   summary: string;
+  meta?: string;
+  image?: string;
   calories: number;
   protein: number;
   carbs: number;
@@ -47,6 +49,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false), [result, setResult] = useState<Result | null>(null), [error, setError] = useState(""), [cameraError, setCameraError] = useState(""), [helpOpen, setHelpOpen] = useState(false);
   const [enriching, setEnriching] = useState(false), [showHighlights, setShowHighlights] = useState(false), [showConcerns, setShowConcerns] = useState(false), [showAlternatives, setShowAlternatives] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [displayScore, setDisplayScore] = useState(0);
   const video = useRef<HTMLVideoElement>(null), stream = useRef<MediaStream | null>(null), decodeControls = useRef<IScannerControls | null>(null), imageInput = useRef<HTMLInputElement>(null);
   const stopCamera = useCallback(() => { decodeControls.current?.stop(); decodeControls.current = null; stream.current?.getTracks().forEach(t => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCameraReady(false); }, []);
 
@@ -61,6 +64,29 @@ export default function Home() {
     const t3 = window.setTimeout(() => setShowAlternatives(true), 360);
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearTimeout(t3); };
   }, [result]);
+
+  // Animates the score ring's number toward its target (both on first reveal, and again if
+  // AI enrichment later revises the score) rather than snapping straight to the new value.
+  const displayScoreRef = useRef(0);
+  const scoreValue = result?.score;
+  useEffect(() => {
+    if (typeof scoreValue !== "number") { displayScoreRef.current = 0; setDisplayScore(0); return; }
+    const target = Math.round(scoreValue);
+    const start = displayScoreRef.current;
+    const startTime = performance.now();
+    const duration = 650;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const value = Math.round(start + (target - start) * eased);
+      displayScoreRef.current = value;
+      setDisplayScore(value);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [scoreValue]);
 
   const enrichBarcode = useCallback(async (code: string) => {
     try {
@@ -142,7 +168,8 @@ export default function Home() {
       const r = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error);
-      setResult({ ...data, alternatives: normalizeAlternatives(data.alternatives) });
+      // The photo the user just took/picked doubles as the result header image — no extra round trip needed.
+      setResult({ ...data, image: data.image || image, alternatives: normalizeAlternatives(data.alternatives) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "The food scan did not finish.");
     } finally {
@@ -168,7 +195,8 @@ export default function Home() {
     <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && <div className="scan-beam" />}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" capture="environment" hidden onChange={e => file(e.target.files?.[0])} />
-  {(loading || result || error) && <div className="result-sheet"><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{loading && <div className="scan-state"><LoaderCircle className="spin" size={38} /><h2>Checking nutrition info</h2><p>Matching ingredients and nutrition facts…</p></div>}{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && !loading && <div className="result-content"><div className="result-heading"><div><p>{result.category || "FOOD"} · NUTRITION SCORE</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className={`score-ring grade-${grade}`}><b>{Math.round(result.score)}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div></div>{result.facts?.length ? <div className="facts-grid">{result.facts.map((fact, i) => <div key={`${fact.label}-${i}`}><span>{fact.label}</span><b>{fact.value}</b></div>)}</div> : null}{enriching && <div className="ai-status"><LoaderCircle className="spin" size={16} /><span>Loading Gemini health insights…</span></div>}<div className={`insights section-reveal ${showHighlights ? "show" : ""}`}>{result.highlights?.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div>{result.concerns?.length ? <div className={`concerns section-reveal ${showConcerns ? "show" : ""}`}><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className={`alternatives section-reveal ${showAlternatives ? "show" : ""}`}><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  {loading && <div className="scan-loading"><div className="pulse-bars"><i /><i /><i /><i /><i /></div><p>Loading results…</p></div>}
+  {!loading && (result || error) && <div className="result-sheet"><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-heading"><img className="result-photo" src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /><div className="result-title"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{enriching && <div className="ai-status"><LoaderCircle className="spin" size={16} /><span>Loading Gemini health insights…</span></div>}{result.highlights?.length ? <div className={`insights section-reveal ${showHighlights ? "show" : ""}`}>{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className={`concerns section-reveal ${showConcerns ? "show" : ""}`}><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className={`alternatives section-reveal ${showAlternatives ? "show" : ""}`}><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
 }
 
 function Help({ onClose }: { onClose: () => void }) {

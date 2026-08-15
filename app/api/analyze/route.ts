@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
-import { gradeForScore } from "../../../lib/nutrition";
+import { gradeForScore, toNumber } from "../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const system = `You are NutriLens, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
-{"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"highlights":["string","string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+{"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
 Rules:
-- Use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown.
+- Use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown. Use 0 for a nutrient you truly can't estimate.
 - If serving size is uncertain, state uncertainty in summary and caution.
 - Never invent ingredient lists, medical claims, or disease advice.
-- Score is 0-100, where higher means a more nutritious everyday choice. Weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and degree of processing negatively. Roughly: 80-100 whole/minimally processed and nutrient-dense, 65-79 solid everyday choice, 45-64 mixed/moderately processed, 25-44 noticeably unbalanced, 0-24 heavily processed or nutrient-poor.
+- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment, and don't let one moderate number dominate an otherwise good choice. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
 - Do not include a "grade" field — it is computed from the score.
-- Alternatives must be realistic healthier swaps for the same food type.`;
+- Keep highlights and concerns short and concrete, max 2-3 each — only include a concern that's genuinely notable.
+- Alternatives must be realistic healthier swaps for the same food type, max 3.`;
 
 export async function POST(request: Request) {
   const { image } = await request.json();
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       model,
       temperature: 0.15,
-      max_tokens: 500,
+      max_tokens: 550,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -64,8 +65,20 @@ export async function POST(request: Request) {
     const parsed = JSON.parse(content ?? "{}");
     const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
     const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : 0;
+
+    const sugar = toNumber(parsed.sugar_g);
+    const sodium = toNumber(parsed.sodium_mg);
+    const satFat = toNumber(parsed.sat_fat_g);
+    const fiber = toNumber(parsed.fiber_g);
+    const facts = [
+      { label: "Sugar", value: `${sugar ? sugar.toFixed(1) : "0"}g` },
+      { label: "Sodium", value: `${Math.round(sodium)}mg` },
+      { label: "Sat fat", value: `${satFat ? satFat.toFixed(1) : "0"}g` },
+      { label: "Fiber", value: `${fiber ? fiber.toFixed(1) : "0"}g` }
+    ];
+
     // Grade is derived from the score rather than trusted from the model, so the two can never disagree.
-    return NextResponse.json({ ...parsed, score, grade: gradeForScore(score), alternatives });
+    return NextResponse.json({ ...parsed, score, grade: gradeForScore(score), facts, alternatives });
   } catch {
     return NextResponse.json({ error: "The AI returned an unreadable result. Please try again." }, { status: 502 });
   }
