@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
-import { gradeForScore, nutrientPer100g, toNumber } from "../../../../lib/nutrition";
+import { gradeForScore, nutrientPer100g, parseServing, toNumber } from "../../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's per-100g nutrition and ingredient facts.
+const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
 {"score":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
 Rules:
-- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper. Don't let one moderate number (e.g. saturated fat from a chocolate coating) tank an otherwise excellent product. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
-- Use only the provided nutrition and ingredient facts, all given per 100g/100ml. Do not invent nutrients, serving sizes, or medical claims.
-- Keep highlights/concerns short and concrete (cite actual numbers when useful), max 3 each. Only include a concern that's genuinely notable — don't pad the list.
+- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula — base it on nutrients_per_100g (the standard, comparable nutrition-density basis) so it's not skewed by serving size: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper. Don't let one moderate number (e.g. saturated fat from a chocolate coating) tank an otherwise excellent product. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
+- When highlights/concerns cite a specific amount, cite the nutrients_per_serving numbers (that's what's shown on screen) using the given serving label — never cite the per-100g numbers directly, and never invent a serving size other than the one given.
+- Use only the provided nutrition and ingredient facts. Do not invent nutrients or medical claims.
+- Keep highlights/concerns short and concrete, max 3 each. Only include a concern that's genuinely notable — don't pad the list.
 - Alternatives must be realistic healthier packaged swaps for the same type of product, max 3.`;
 
 export async function POST(request: Request) {
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
     fiber_g: nutrientPer100g(nutriments, "fiber_100g")
   };
 
+  const serving = parseServing(product.serving_size, product.serving_quantity);
+  const hasServing = serving.grams > 0;
+  const scale = hasServing ? serving.grams / 100 : 1;
+  const serving_label = hasServing ? serving.label || `${serving.grams}g` : "100g (no serving size listed)";
+  const nutrients_per_serving = Object.fromEntries(Object.entries(nutrients_per_100g).map(([key, value]) => [key, Math.round(value * scale * 10) / 10]));
+
   const context = {
     barcode: code,
     name: product.product_name || product.product_name_en || "Scanned product",
@@ -47,7 +54,9 @@ export async function POST(request: Request) {
     ingredients_text: product.ingredients_text_en || product.ingredients_text || "",
     nova_group: product.nova_group || null,
     additives_count: Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n),
-    nutrients_per_100g
+    serving_label,
+    nutrients_per_100g,
+    nutrients_per_serving
   };
 
   const requestedModel = process.env.OPENROUTER_MODEL;
@@ -85,7 +94,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       score,
       grade: score === null ? null : gradeForScore(score),
-      summary: typeof parsed.summary === "string" ? parsed.summary : "AI insights are based on per-100g nutrition and ingredient quality.",
+      summary: typeof parsed.summary === "string" ? parsed.summary : "AI insights are based on nutrition and ingredient quality.",
       highlights: Array.isArray(parsed.highlights) ? parsed.highlights.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
       concerns: Array.isArray(parsed.concerns) ? parsed.concerns.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
       alternatives,

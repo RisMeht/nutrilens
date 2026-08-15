@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl } from "../../../lib/openfoodfacts";
-import { buildHealthScore, nutrientPer100g, toNumber } from "../../../lib/nutrition";
+import { buildHealthScore, nutrientPer100g, parseServing, toNumber } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
   const rawCode = new URL(request.url).searchParams.get("code") || "";
@@ -31,11 +31,8 @@ export async function GET(request: Request) {
   const nutriments = (product.nutriments || {}) as Record<string, unknown>;
   const ingredientsText = (product.ingredients_text_en || product.ingredients_text || "").toString().trim();
 
-  // Every number shown and scored comes from one canonical basis — per 100g/100ml, the one
-  // figure Open Food Facts reliably has for every product. Serving size is frequently missing,
-  // unparsable, or only partially populated (some nutrients have a "_serving" field, others
-  // don't) — mixing bases per-nutrient is exactly what made scans show wrong numbers before.
-  // When a real serving weight IS known, it's surfaced as a simple secondary annotation only.
+  // per100 is the one figure Open Food Facts reliably has for every product, so it's the
+  // canonical source of truth (and what the health score is always computed from below).
   const per100 = {
     energy: nutrientPer100g(nutriments, "energy-kcal_100g") || toNumber(nutriments.energy_kcal),
     protein: nutrientPer100g(nutriments, "proteins_100g"),
@@ -48,6 +45,27 @@ export async function GET(request: Request) {
     sodiumMg: (nutrientPer100g(nutriments, "sodium_100g") || nutrientPer100g(nutriments, "salt_100g") / 2.5) * 1000
   };
 
+  // What's actually shown to the user is per-serving — that's what matches the label they're
+  // holding. Rather than trust Open Food Facts' own "_serving" fields (inconsistently
+  // populated per nutrient, which is what caused wrong-looking numbers before), every serving
+  // figure here is derived by uniformly scaling the trusted per100 numbers by one serving
+  // weight. That keeps every nutrient on the same, self-consistent basis. Falls back to
+  // showing per 100g only when no serving weight can be determined at all.
+  const serving = parseServing(product.serving_size, product.serving_quantity);
+  const hasServing = serving.grams > 0;
+  const scale = hasServing ? serving.grams / 100 : 1;
+  const basisLabel = hasServing ? serving.label || `${serving.grams}g` : "100g";
+  const display = {
+    energy: per100.energy * scale,
+    protein: per100.protein * scale,
+    carbs: per100.carbs * scale,
+    fat: per100.fat * scale,
+    sugar: per100.sugar * scale,
+    satFat: per100.satFat * scale,
+    fiber: per100.fiber * scale,
+    sodiumMg: per100.sodiumMg * scale
+  };
+
   const additivesCount = Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n);
   const novaGroup = toNumber(product.nova_group);
   const fruitVegPct = toNumber(
@@ -57,9 +75,10 @@ export async function GET(request: Request) {
   );
 
   // This is an instant, deterministic placeholder score (Nutri-Score points + a NOVA
-  // adjustment) shown immediately. app/api/barcode/enrich/route.ts replaces it moments
-  // later with a holistic score from Gemini, which can weigh context a rigid formula can't
-  // (e.g. a high-protein, low-sugar bar shouldn't be marked down just for being packaged).
+  // adjustment) shown immediately, always computed per 100g regardless of the display basis
+  // above. app/api/barcode/enrich/route.ts replaces it moments later with a holistic score
+  // from Gemini, which can weigh context a rigid formula can't (e.g. a high-protein,
+  // low-sugar bar shouldn't be marked down just for being packaged).
   const { score, grade } = buildHealthScore({
     sugarPer100g: per100.sugar,
     sodiumMgPer100g: per100.sodiumMg,
@@ -71,11 +90,11 @@ export async function GET(request: Request) {
     fruitVegPct
   });
 
-  // FSA "high in" per-100g cutoffs.
+  // FSA "high in" per-100g cutoffs, scaled to whatever basis is actually shown.
   const concerns: string[] = [];
-  if (per100.sugar >= 22.5) concerns.push(`High sugar: ${per100.sugar.toFixed(1)}g per 100g.`);
-  if (per100.sodiumMg >= 600) concerns.push(`High sodium: ${Math.round(per100.sodiumMg)}mg per 100g.`);
-  if (per100.satFat >= 5) concerns.push(`High saturated fat: ${per100.satFat.toFixed(1)}g per 100g.`);
+  if (display.sugar >= 22.5 * scale) concerns.push(`High sugar: ${display.sugar.toFixed(1)}g per ${basisLabel}.`);
+  if (display.sodiumMg >= 600 * scale) concerns.push(`High sodium: ${Math.round(display.sodiumMg)}mg per ${basisLabel}.`);
+  if (display.satFat >= 5 * scale) concerns.push(`High saturated fat: ${display.satFat.toFixed(1)}g per ${basisLabel}.`);
   if (additivesCount >= 3) concerns.push(`${additivesCount} additives listed.`);
 
   const productName =
@@ -96,10 +115,10 @@ export async function GET(request: Request) {
   ).slice(0, 3);
 
   const facts = [
-    { label: "Sugar", value: `${per100.sugar ? per100.sugar.toFixed(1) : "0"}g` },
-    { label: "Sodium", value: `${Math.round(per100.sodiumMg)}mg` },
-    { label: "Sat fat", value: `${per100.satFat ? per100.satFat.toFixed(1) : "0"}g` },
-    { label: "Fiber", value: `${per100.fiber ? per100.fiber.toFixed(1) : "0"}g` }
+    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g` },
+    { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg` },
+    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g` },
+    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g` }
   ];
 
   // Open Food Facts is community-edited, and fields like "quantity" occasionally contain
@@ -114,13 +133,13 @@ export async function GET(request: Request) {
     category: "BARCODE",
     grade,
     score,
-    summary: "Nutrition shown per 100g of this product.",
+    summary: hasServing ? `Nutrition per serving (${basisLabel}).` : "This product's label doesn't list a serving size, so nutrition is shown per 100g.",
     meta,
     image: productImageUrl(product),
-    calories: Math.round(per100.energy),
-    protein: Number(per100.protein.toFixed(1)),
-    carbs: Number(per100.carbs.toFixed(1)),
-    fat: Number(per100.fat.toFixed(1)),
+    calories: Math.round(display.energy),
+    protein: Number(display.protein.toFixed(1)),
+    carbs: Number(display.carbs.toFixed(1)),
+    fat: Number(display.fat.toFixed(1)),
     highlights: [],
     concerns,
     alternatives,

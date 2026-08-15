@@ -88,7 +88,7 @@ export const findBetterSwaps = async ({
       const sodiumMg = toNumber(nutriments.sodium_100g) * 1000;
       const satFat = toNumber(nutriments["saturated-fat_100g"]);
       const energy = toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
-      const image = (typeof item.image_front_small_url === "string" && item.image_front_small_url) || (typeof item.image_front_url === "string" && item.image_front_url) || "";
+      const image = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
       if (!image) return null;
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
@@ -137,12 +137,12 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const data = await response.json();
       const products: Record<string, unknown>[] = Array.isArray(data?.products) ? data.products : [];
       const withImage = products.find((item) =>
-        (typeof item.image_front_small_url === "string" && item.image_front_small_url) ||
-        (typeof item.image_front_url === "string" && item.image_front_url)
+        (typeof item.image_front_url === "string" && item.image_front_url) ||
+        (typeof item.image_front_small_url === "string" && item.image_front_small_url)
       );
       const image = withImage
-        ? (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
-          (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
+        ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
+          (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
           ""
         : "";
       return { name, image };
