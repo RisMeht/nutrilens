@@ -3,13 +3,13 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType } from "@zxing/library";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, SwitchCamera, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, Search, SwitchCamera, Trash2, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 type Alternative = { name: string; image?: string };
 type NutrientRange = { bucket: "low" | "moderate" | "high"; positionPct: number; good: boolean; bad: boolean };
 type NutritionFact = { label: string; value: string; range?: NutrientRange };
-type AdditiveFlag = { name: string; risk: "green" | "yellow" | "orange" | "red"; note: string };
+type AdditiveFlag = { name: string; risk: "green" | "yellow" | "orange" | "red"; note: string; detail?: string };
 type ScoreBreakdown = {
   nutrition: { score: number };
   additives: { score: number; items: AdditiveFlag[]; applicable: boolean };
@@ -37,6 +37,7 @@ type Result = {
 };
 
 type ScanMode = "food" | "barcode";
+type BrowseItem = { code: string; name: string; image: string; grade: string };
 
 // A designed fallback for whenever a real product photo isn't available, instead of a plain
 // placeholder text box: picks a food-appropriate emoji and one of a few brand-matched
@@ -91,6 +92,89 @@ const normalizeAlternatives = (alts?: unknown): Alternative[] => {
     .filter((item): item is Alternative => item !== null);
 };
 
+// Shared by the live barcode-scan flow and the Browse screen (picking any product from a
+// search/category list runs through the exact same lookup+merge as actually scanning it) —
+// both the instant Open Food Facts lookup and the Gemini enrichment are fetched together (in
+// parallel) and merged into one result before anything is shown.
+const resolveBarcodeResult = async (code: string): Promise<Result> => {
+  const [offRes, enrichRes] = await Promise.allSettled([
+    fetch(`/api/barcode?code=${encodeURIComponent(code)}`).then(async r => ({ ok: r.ok, data: await r.json() })),
+    fetch("/api/barcode/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).then(async r => ({ ok: r.ok, data: await r.json() }))
+  ]);
+  if (offRes.status !== "fulfilled" || !offRes.value.ok) {
+    throw new Error(offRes.status === "fulfilled" ? offRes.value.data.error : "We couldn’t look up that barcode.");
+  }
+  const base = offRes.value.data;
+  let merged = base;
+  if (enrichRes.status === "fulfilled" && enrichRes.value.ok) {
+    const e = enrichRes.value.data;
+    merged = {
+      ...base,
+      score: typeof e.score === "number" ? e.score : base.score,
+      grade: typeof e.grade === "string" ? e.grade : base.grade,
+      summary: typeof e.summary === "string" ? e.summary : base.summary,
+      highlights: Array.isArray(e.highlights) && e.highlights.length ? e.highlights : base.highlights,
+      concerns: Array.isArray(e.concerns) ? e.concerns : base.concerns,
+      alternatives: Array.isArray(e.alternatives) && e.alternatives.length ? e.alternatives : base.alternatives,
+      caution: typeof e.caution === "string" ? e.caution : base.caution,
+      breakdown: e.breakdown && typeof e.breakdown === "object" ? e.breakdown : base.breakdown
+    };
+  }
+  return { ...merged, alternatives: normalizeAlternatives(merged.alternatives) };
+};
+
+// On-device scan history — no account or backend, matching this app's architecture, so it's
+// stored in localStorage and only ever visible on this browser/device. Yuka's own history is
+// tied to their account system; this is the closest equivalent that doesn't require one.
+type HistoryEntry = Result & { historyId: string; scannedAt: number };
+const HISTORY_KEY = "nutrilens-history-v1";
+const MAX_HISTORY = 60;
+const loadHistory = (): HistoryEntry[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
+const persistHistory = (list: HistoryEntry[]) => {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* storage full/unavailable — history is a nice-to-have, never block scanning over it */ }
+};
+// A food photo can be several MB straight from a phone's gallery — saved as-is, a handful of
+// scans would blow past localStorage's ~5-10MB quota. Barcode images are already just short
+// URLs (loaded fresh from Open Food Facts when history is viewed), so only photo-mode's data-URL
+// captures need shrinking down to a small thumbnail before they're persisted.
+const shrinkImageForHistory = (dataUrl: string): Promise<string> => new Promise((resolve) => {
+  if (!dataUrl.startsWith("data:")) { resolve(dataUrl); return; }
+  const img = new window.Image();
+  img.onload = () => {
+    const size = 240;
+    const ratio = Math.min(1, size / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * ratio));
+    canvas.height = Math.max(1, Math.round(img.height * ratio));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { resolve(""); return; }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    resolve(canvas.toDataURL("image/jpeg", 0.6));
+  };
+  img.onerror = () => resolve("");
+  img.src = dataUrl;
+});
+const addHistoryEntry = async (result: Result) => {
+  const image = result.image ? await shrinkImageForHistory(result.image) : result.image;
+  const entry: HistoryEntry = { ...result, image, historyId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, scannedAt: Date.now() };
+  persistHistory([entry, ...loadHistory()].slice(0, MAX_HISTORY));
+};
+const timeAgo = (ts: number) => {
+  const minutes = Math.floor((Date.now() - ts) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
+};
+
 export default function Home() {
   const [mode, setMode] = useState<ScanMode>("food"), [cameraOn, setCameraOn] = useState(false), [entered, setEntered] = useState(false), [facing, setFacing] = useState<"environment" | "user">("environment");
   const [loading, setLoading] = useState(false), [result, setResult] = useState<Result | null>(null), [error, setError] = useState(""), [cameraError, setCameraError] = useState(""), [helpOpen, setHelpOpen] = useState(false);
@@ -99,6 +183,16 @@ export default function Home() {
   const [displayScore, setDisplayScore] = useState(0);
   const [torchOn, setTorchOn] = useState(false), [torchSupported, setTorchSupported] = useState(false);
   const [homeLeaving, setHomeLeaving] = useState(false);
+  const [additiveDetail, setAdditiveDetail] = useState<AdditiveFlag | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false), [historyList, setHistoryList] = useState<HistoryEntry[]>([]), [clearArmed, setClearArmed] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const openHistory = () => { setHistoryList(loadHistory()); setClearArmed(false); setHistoryOpen(true); };
+  const removeHistoryEntry = (id: string) => { const next = loadHistory().filter(e => e.historyId !== id); persistHistory(next); setHistoryList(next); };
+  const clearAllHistory = () => {
+    if (!clearArmed) { setClearArmed(true); window.setTimeout(() => setClearArmed(false), 3000); return; }
+    persistHistory([]); setHistoryList([]); setClearArmed(false);
+  };
+  const viewHistoryEntry = (entry: HistoryEntry) => { setResult(entry); setError(""); setHistoryOpen(false); };
   const video = useRef<HTMLVideoElement>(null), stream = useRef<MediaStream | null>(null), imageInput = useRef<HTMLInputElement>(null);
   const stopCamera = useCallback(() => { stream.current?.getTracks().forEach(t => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCameraReady(false); setTorchSupported(false); setTorchOn(false); }, []);
   const toggleTorch = useCallback(async () => {
@@ -141,30 +235,9 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const [offRes, enrichRes] = await Promise.allSettled([
-        fetch(`/api/barcode?code=${encodeURIComponent(code)}`).then(async r => ({ ok: r.ok, data: await r.json() })),
-        fetch("/api/barcode/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).then(async r => ({ ok: r.ok, data: await r.json() }))
-      ]);
-      if (offRes.status !== "fulfilled" || !offRes.value.ok) {
-        throw new Error(offRes.status === "fulfilled" ? offRes.value.data.error : "We couldn’t look up that barcode.");
-      }
-      const base = offRes.value.data;
-      let merged = base;
-      if (enrichRes.status === "fulfilled" && enrichRes.value.ok) {
-        const e = enrichRes.value.data;
-        merged = {
-          ...base,
-          score: typeof e.score === "number" ? e.score : base.score,
-          grade: typeof e.grade === "string" ? e.grade : base.grade,
-          summary: typeof e.summary === "string" ? e.summary : base.summary,
-          highlights: Array.isArray(e.highlights) && e.highlights.length ? e.highlights : base.highlights,
-          concerns: Array.isArray(e.concerns) ? e.concerns : base.concerns,
-          alternatives: Array.isArray(e.alternatives) && e.alternatives.length ? e.alternatives : base.alternatives,
-          caution: typeof e.caution === "string" ? e.caution : base.caution,
-          breakdown: e.breakdown && typeof e.breakdown === "object" ? e.breakdown : base.breakdown
-        };
-      }
-      setResult({ ...merged, alternatives: normalizeAlternatives(merged.alternatives) });
+      const finalResult = await resolveBarcodeResult(code);
+      setResult(finalResult);
+      addHistoryEntry(finalResult).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "We couldn’t look up that barcode.");
     } finally {
@@ -235,7 +308,9 @@ export default function Home() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error);
       // The photo the user just took/picked doubles as the result header image — no extra round trip needed.
-      setResult({ ...data, image: data.image || image, alternatives: normalizeAlternatives(data.alternatives) });
+      const finalResult = { ...data, image: data.image || image, alternatives: normalizeAlternatives(data.alternatives) };
+      setResult(finalResult);
+      addHistoryEntry(finalResult).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "The food scan did not finish.");
     } finally {
@@ -260,12 +335,12 @@ export default function Home() {
   const displayNumber = (value: number | undefined, suffix = "") => Number.isFinite(value) ? `${value}${suffix}` : "—";
   if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header className="home-header"><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-main"><div className="home-copy"><img className="home-logo" src="/logo" alt="" /><h1>NutriLens</h1><span>Know what’s healthy, instantly.</span></div><div className="home-card"><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div></div></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
-    <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></div></header>
+    <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setBrowseOpen(true)} aria-label="Search foods"><Search size={19} /></button><button className="help" onClick={openHistory} aria-label="Scan history"><HistoryIcon size={19} /></button><button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
     <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{((mode === "barcode" && !loading) || (mode === "food" && loading)) && <div className="scan-beam" />}{loading && mode === "barcode" && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
-  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-wrap"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</div>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">Weighted roughly 60% nutrition · 30% additives · 10% organic — the same shape Yuka's published method uses.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <div key={`${a.name}-${i}`} className={`additive-flag risk-${a.risk}`}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div></div>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-wrap"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</div>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">Weighted roughly 60% nutrition · 30% additives · 10% organic — the same shape Yuka's published method uses.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{historyOpen && <History list={historyList} clearArmed={clearArmed} onClose={() => setHistoryOpen(false)} onView={viewHistoryEntry} onDelete={removeHistoryEntry} onClearAll={clearAllHistory} />}{browseOpen && <Browse onClose={() => setBrowseOpen(false)} onOpenResult={(r) => { setResult(r); setError(""); setBrowseOpen(false); addHistoryEntry(r).catch(() => {}); }} />}</main>;
 }
 
 // A real drag-to-confirm slider (not just a button styled to look like one): the thumb
@@ -331,6 +406,106 @@ function SwipeEnter({ onComplete }: { onComplete: () => void }) {
       <ArrowRight size={24} />
     </div>
   </div>;
+}
+
+const RISK_LABEL: Record<AdditiveFlag["risk"], string> = { green: "Risk-free", yellow: "Limited risk", orange: "Moderate risk", red: "High risk" };
+function AdditiveDetail({ item, onClose }: { item: AdditiveFlag; onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card additive-detail-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><span className={`risk-pill risk-${item.risk}`}><i className="risk-dot" />{RISK_LABEL[item.risk]}</span><h2>{item.name}</h2><p>{item.detail || item.note}</p><p className="help-note">Based on mainstream food-safety research (EFSA/IARC-style evidence), not a personal medical assessment.</p></section></div>;
+}
+
+function History({ list, clearArmed, onClose, onView, onDelete, onClearAll }: { list: HistoryEntry[]; clearArmed: boolean; onClose: () => void; onView: (entry: HistoryEntry) => void; onDelete: (id: string) => void; onClearAll: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card page-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><h2>History</h2>
+    {list.length > 0 && <button className="page-clear" onClick={onClearAll}><Trash2 size={13} />{clearArmed ? "Tap again to confirm" : "Clear all"}</button>}
+    {list.length === 0 ? <p className="page-empty">No scans yet — everything you scan will show up here, saved on this device only.</p> : <div className="history-list">
+      {list.map(entry => <div key={entry.historyId} className="history-row">
+        <button className="history-row-main" onClick={() => onView(entry)}>
+          <img src={entry.image || fallbackFoodImage(entry.name)} alt="" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(entry.name); }} />
+          <div className="history-row-text"><b>{entry.name}</b><span>{timeAgo(entry.scannedAt)}</span></div>
+          <em className={`history-grade grade-${entry.grade.toLowerCase()}`}>{entry.grade}</em>
+        </button>
+        <button className="history-delete" onClick={() => onDelete(entry.historyId)} aria-label="Delete"><X size={15} /></button>
+      </div>)}
+    </div>}
+  </section></div>;
+}
+
+const BROWSE_CATEGORIES: { label: string; tag: string }[] = [
+  { label: "Snacks", tag: "en:snacks" },
+  { label: "Beverages", tag: "en:beverages" },
+  { label: "Breakfast", tag: "en:breakfasts" },
+  { label: "Dairy", tag: "en:dairies" },
+  { label: "Frozen", tag: "en:frozen-foods" },
+  { label: "Bakery", tag: "en:breads" }
+];
+
+// Search any packaged product in Open Food Facts' database (not just what's been scanned), or
+// browse a category sorted best-first — the closest equivalent to Yuka's "top foods"/database
+// browsing without access to their own curated rankings. Picking a result runs it through the
+// exact same lookup+AI pipeline as an actual barcode scan (resolveBarcodeResult).
+function Browse({ onClose, onOpenResult }: { onClose: () => void; onOpenResult: (result: Result) => void }) {
+  const [closing, setClosing] = useState(false);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<string | null>(null);
+  const [items, setItems] = useState<BrowseItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selecting, setSelecting] = useState<string | null>(null);
+  const [pickError, setPickError] = useState("");
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q && !category) { setItems([]); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q); else if (category) params.set("category", category);
+        const r = await fetch(`/api/browse?${params.toString()}`);
+        const data = await r.json();
+        if (!cancelled) setItems(Array.isArray(data.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setItems([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, q ? 400 : 0); // debounce free typing; category taps fetch immediately
+    return () => { cancelled = true; window.clearTimeout(timeoutId); };
+  }, [query, category]);
+
+  const select = async (code: string) => {
+    setSelecting(code);
+    setPickError("");
+    try {
+      const result = await resolveBarcodeResult(code);
+      onOpenResult(result);
+    } catch {
+      setPickError("Couldn’t load that product. Try another.");
+    } finally {
+      setSelecting(null);
+    }
+  };
+
+  const empty = !loading && !items.length;
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card page-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}>
+    <button onClick={close}><X size={19} /></button>
+    <h2>Browse foods</h2>
+    <div className="browse-search"><Search size={16} /><input value={query} onChange={e => { setQuery(e.target.value); if (e.target.value) setCategory(null); }} placeholder="Search any packaged food" /></div>
+    <div className="browse-chips">{BROWSE_CATEGORIES.map(c => <button key={c.tag} className={category === c.tag ? "selected" : ""} onClick={() => { setCategory(prev => prev === c.tag ? null : c.tag); setQuery(""); }}>{c.label}</button>)}</div>
+    {loading && <div className="browse-loading"><LoaderCircle className="spin" size={22} /></div>}
+    {empty && (query || category) && <p className="page-empty">No products found. Try a different search.</p>}
+    {empty && !query && !category && <p className="page-empty">Search any packaged food, or pick a category to browse top-rated picks.</p>}
+    {pickError && <p className="page-empty">{pickError}</p>}
+    {!loading && items.length > 0 && <div className="browse-list"><div className="browse-grid">{items.map(item => <button key={item.code} className="browse-tile" disabled={!!selecting} onClick={() => select(item.code)}>
+      <div className="browse-tile-img"><img src={item.image || fallbackFoodImage(item.name)} alt="" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} />{selecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={22} /></div>}</div>
+      <span>{item.name}</span>
+      {item.grade !== "?" && <em className={`history-grade grade-${item.grade.toLowerCase()}`}>{item.grade}</em>}
+    </button>)}</div></div>}
+  </section></div>;
 }
 
 function Help({ onClose }: { onClose: () => void }) {

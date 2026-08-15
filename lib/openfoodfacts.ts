@@ -1,6 +1,12 @@
 import { toNumber } from "./nutrition";
 
 const OFF_BASE = "https://world.openfoodfacts.org";
+// Open Food Facts' legacy /cgi/search.pl endpoint (used here until now) currently returns a
+// hard 503 "Page temporarily unavailable" for every request — silently degrading "Better
+// swaps" and alternative-photo lookups to empty results, since both were built to fail
+// gracefully rather than throw. Their newer Elasticsearch-backed Search API is a near
+// drop-in replacement (same field names via `fields=`, `hits` instead of `products`).
+const OFF_SEARCH_BASE = "https://search.openfoodfacts.org";
 const OFF_HEADERS = { "User-Agent": "NutriLens/1.0 (nutrition scanner)" };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs = 9000) => {
@@ -68,18 +74,15 @@ export const findBetterSwaps = async ({
   satFatPer100g: number;
   energyPer100g: number;
 }) => {
-  const searchUrl = new URL(`${OFF_BASE}/cgi/search.pl`);
-  searchUrl.searchParams.set("search_terms", productName || "food");
-  searchUrl.searchParams.set("search_simple", "1");
-  searchUrl.searchParams.set("action", "process");
-  searchUrl.searchParams.set("json", "1");
+  const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
+  searchUrl.searchParams.set("q", productName || "food");
   searchUrl.searchParams.set("page_size", "30");
   searchUrl.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,categories_tags,nutriments");
 
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
   if (!response?.ok) return [] as Array<{ name: string; image: string }>;
   const data = await response.json();
-  const products: Record<string, unknown>[] = Array.isArray(data?.products) ? data.products : [];
+  const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
 
   return products
     .map((item) => {
@@ -160,16 +163,13 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
   const resolved = await Promise.all(
     names.map(async (name) => {
-      const searchUrl = new URL(`${OFF_BASE}/cgi/search.pl`);
-      searchUrl.searchParams.set("search_terms", name);
-      searchUrl.searchParams.set("search_simple", "1");
-      searchUrl.searchParams.set("action", "process");
-      searchUrl.searchParams.set("json", "1");
+      const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
+      searchUrl.searchParams.set("q", name);
       searchUrl.searchParams.set("page_size", "3");
       searchUrl.searchParams.set("fields", "product_name,product_name_en,image_front_small_url,image_front_url");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
-      const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.products ?? [] : [];
+      const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
       const withImage = products.find((item) =>
         (typeof item.image_front_url === "string" && item.image_front_url) ||
         (typeof item.image_front_small_url === "string" && item.image_front_small_url)
@@ -189,4 +189,38 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
   // Keep every suggested alternative even when neither source has a photo for it — the
   // client falls back to a generated placeholder tile rather than the swap disappearing entirely.
   return resolved;
+};
+
+export type BrowseItem = { code: string; name: string; image: string; grade: string };
+
+// Backs the Browse/search screen — a free-text search hits Open Food Facts directly (any
+// packaged product in their database, not just what the user has personally scanned), and a
+// category browse sorts by Nutri-Score so genuinely well-rated products surface first, the
+// closest equivalent to Yuka's own curated "top foods" without access to their proprietary rankings.
+export const browseProducts = async ({ query, category }: { query?: string; category?: string }): Promise<BrowseItem[]> => {
+  const url = new URL(`${OFF_SEARCH_BASE}/search`);
+  if (query) {
+    url.searchParams.set("q", query);
+  } else if (category) {
+    url.searchParams.set("categories_tags", category);
+    url.searchParams.set("sort_by", "nutriscore_score");
+  }
+  url.searchParams.set("page_size", "24");
+  url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url");
+
+  const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 3600 } }), 8000).catch(() => null);
+  if (!response?.ok) return [];
+  const data = await response.json();
+  const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
+
+  return products
+    .map((item): BrowseItem | null => {
+      const code = typeof item.code === "string" ? item.code : "";
+      const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "";
+      if (!code || !name) return null;
+      const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
+      const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : "?";
+      return { code, name, image: rawImage ? toFullSizeImage(rawImage) : "", grade };
+    })
+    .filter((item): item is BrowseItem => item !== null);
 };

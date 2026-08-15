@@ -165,7 +165,7 @@ export const nutrientRange = (key: RangeKey, value: number, scale = 1): Nutrient
 // reasoning (grounded in the same EFSA/IARC-style evidence Yuka cites) for the additive third,
 // rather than reproducing anything of Yuka's own.
 export type AdditiveRisk = "green" | "yellow" | "orange" | "red";
-export type AdditiveFlag = { name: string; risk: AdditiveRisk; note: string };
+export type AdditiveFlag = { name: string; risk: AdditiveRisk; note: string; detail?: string };
 
 export const additivesScoreFromFlags = (flags: AdditiveFlag[]) => {
   if (!flags.length) return 100;

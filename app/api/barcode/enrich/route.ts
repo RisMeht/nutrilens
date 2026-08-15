@@ -20,7 +20,7 @@ export const maxDuration = 30;
 
 const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
-{"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","score":number,"nutritionScore":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words"}]}
+{"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","score":number,"nutritionScore":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}
 Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific product, then let the score follow from that.
 Rules:
 - ${SCORING_RUBRIC} Base the score on nutrients_per_100g (the standard, comparable nutrition-density basis) so it isn't skewed by serving size. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper.
@@ -29,7 +29,7 @@ Rules:
 - Use only the provided nutrition and ingredient facts. Do not invent nutrients or medical claims.
 - Keep highlights/concerns short and concrete, max 3 each. Only include a concern that's genuinely notable — don't pad the list.
 - Alternatives must be realistic healthier packaged swaps for the same type of product, max 3.
-- For "additives": scan ingredients_text for actual food additives (E-numbers, preservatives, artificial colors/sweeteners, emulsifiers, stabilizers) — skip plain foods, water, spices, and basic ingredients like flour or salt. Classify each by mainstream food-safety consensus (the kind of evidence EFSA/IARC review): "red" = credible evidence of meaningful health risk (e.g. potassium bromate, BHA/BHT, certain azo dyes, some nitrites/nitrates); "orange" = moderate/uncertain-but-real concern (e.g. some phosphate or carrageenan-type additives); "yellow" = limited/low-level concern; "green" = widely regarded as safe (e.g. citric acid, ascorbic acid, pectin, lecithin, natural flavors). If ingredients_text is empty or has no notable additives, return an empty array — never invent an ingredient list.`;
+- For "additives": scan ingredients_text for actual food additives (E-numbers, preservatives, artificial colors/sweeteners, emulsifiers, stabilizers) — skip plain foods, water, spices, and basic ingredients like flour or salt. Classify each by mainstream food-safety consensus (the kind of evidence EFSA/IARC review): "red" = credible evidence of meaningful health risk (e.g. potassium bromate, BHA/BHT, certain azo dyes, some nitrites/nitrates); "orange" = moderate/uncertain-but-real concern (e.g. some phosphate or carrageenan-type additives); "yellow" = limited/low-level concern; "green" = widely regarded as safe (e.g. citric acid, ascorbic acid, pectin, lecithin, natural flavors). If ingredients_text is empty or has no notable additives, return an empty array — never invent an ingredient list. "detail" expands on "note" for a reader who taps into it — plain language, factual, no medical advice or scare language beyond what the evidence supports.`;
 
 export async function POST(request: Request) {
   const { code } = await request.json();
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
       // Deterministic (or as close as the provider allows): scanning the same barcode twice
       // should return the same score, not a different one each time.
       temperature: 0,
-      max_tokens: 700,
+      max_tokens: 950,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -135,11 +135,12 @@ export async function POST(request: Request) {
     const VALID_RISKS = new Set(["green", "yellow", "orange", "red"]);
     const additives: AdditiveFlag[] = Array.isArray(parsed.additives)
       ? parsed.additives
-          .filter((item: unknown): item is { name: unknown; risk: unknown; note: unknown } => !!item && typeof item === "object")
-          .map((item: { name: unknown; risk: unknown; note: unknown }) => ({
+          .filter((item: unknown): item is { name: unknown; risk: unknown; note: unknown; detail: unknown } => !!item && typeof item === "object")
+          .map((item: { name: unknown; risk: unknown; note: unknown; detail: unknown }) => ({
             name: typeof item.name === "string" ? item.name : "",
             risk: (VALID_RISKS.has(item.risk as string) ? item.risk : "green") as AdditiveRisk,
-            note: typeof item.note === "string" ? item.note : ""
+            note: typeof item.note === "string" ? item.note : "",
+            detail: typeof item.detail === "string" ? item.detail : ""
           }))
           .filter((item: AdditiveFlag) => item.name)
           .slice(0, 6)
