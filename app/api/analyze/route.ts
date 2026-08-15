@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
-import { gradeForScore, toNumber, SCORING_RUBRIC } from "../../../lib/nutrition";
+import { gradeForScore, nutrientRange, toNumber, SCORING_RUBRIC, type ScoreBreakdown } from "../../../lib/nutrition";
 import { resolveModel } from "../../../lib/ai-model";
 
 export const runtime = "nodejs";
@@ -79,15 +79,27 @@ export async function POST(request: Request) {
     const sodium = toNumber(parsed.sodium_mg);
     const satFat = toNumber(parsed.sat_fat_g);
     const fiber = toNumber(parsed.fiber_g);
+    // Ranges use the same Nutri-Score threshold tables as barcode products, at scale 1 (a
+    // single estimated serving has no reliable per-100g conversion from a photo alone) — a
+    // directionally useful "how much is this, roughly" gauge rather than a precise density figure.
     const facts = [
-      { label: "Sugar", value: `${sugar ? sugar.toFixed(1) : "0"}g` },
-      { label: "Sodium", value: `${Math.round(sodium)}mg` },
-      { label: "Sat fat", value: `${satFat ? satFat.toFixed(1) : "0"}g` },
-      { label: "Fiber", value: `${fiber ? fiber.toFixed(1) : "0"}g` }
+      { label: "Sugar", value: `${sugar ? sugar.toFixed(1) : "0"}g`, range: nutrientRange("sugar", sugar) },
+      { label: "Sodium", value: `${Math.round(sodium)}mg`, range: nutrientRange("sodiumMg", sodium) },
+      { label: "Sat fat", value: `${satFat ? satFat.toFixed(1) : "0"}g`, range: nutrientRange("satFat", satFat) },
+      { label: "Fiber", value: `${fiber ? fiber.toFixed(1) : "0"}g`, range: nutrientRange("fiber", fiber) }
     ];
 
+    // A photo has no ingredient list to check for additives and no reliable organic signal,
+    // so those two-thirds of the Yuka-style breakdown aren't derivable here — only the
+    // nutrition third is shown, and the UI explains why the rest is barcode-only.
+    const breakdown: ScoreBreakdown = {
+      nutrition: { score },
+      additives: { score: 100, items: [], applicable: false },
+      bonus: { organic: false }
+    };
+
     // Grade is derived from the score rather than trusted from the model, so the two can never disagree.
-    return NextResponse.json({ ...parsed, score, grade: gradeForScore(score), facts, alternatives });
+    return NextResponse.json({ ...parsed, score, grade: gradeForScore(score), facts, alternatives, breakdown });
   } catch {
     return NextResponse.json({ error: "The AI returned an unreadable result. Please try again." }, { status: 502 });
   }

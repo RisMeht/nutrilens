@@ -126,3 +126,56 @@ export const buildHealthScore = ({
 
   return { score, grade };
 };
+
+export type RangeBucket = "low" | "moderate" | "high";
+export type NutrientRangeInfo = { bucket: RangeBucket; positionPct: number; good: boolean; bad: boolean };
+
+type RangeKey = "sugar" | "sodiumMg" | "satFat" | "fiber" | "protein";
+const RANGE_CONFIG: Record<RangeKey, { thresholds: number[]; goodDirection: "low" | "high" }> = {
+  sugar: { thresholds: SUGAR_THRESHOLDS, goodDirection: "low" },
+  sodiumMg: { thresholds: SODIUM_MG_THRESHOLDS, goodDirection: "low" },
+  satFat: { thresholds: SAT_FAT_THRESHOLDS, goodDirection: "low" },
+  fiber: { thresholds: FIBER_THRESHOLDS, goodDirection: "high" },
+  protein: { thresholds: PROTEIN_THRESHOLDS, goodDirection: "high" }
+};
+
+// Buckets a nutrient amount into low/moderate/high using the same published Nutri-Score
+// threshold tables the health score itself is built from, rather than inventing separate
+// cutoffs — so a "range" shown on screen always agrees with what the score is actually
+// penalizing or rewarding. `scale` extends the (per-100g) thresholds to whatever basis the
+// value is on, the same trick the FSA "high in" concern flags already use for per-serving figures.
+export const nutrientRange = (key: RangeKey, value: number, scale = 1): NutrientRangeInfo => {
+  const { thresholds, goodDirection } = RANGE_CONFIG[key];
+  const scaled = thresholds.map((t) => t * scale);
+  const lowMax = scaled[Math.max(0, Math.ceil(scaled.length / 3) - 1)];
+  const highMin = scaled[Math.min(scaled.length - 1, Math.ceil((scaled.length * 2) / 3) - 1)];
+  const scaleMax = scaled[scaled.length - 1] * 1.2;
+  const positionPct = clamp((value / scaleMax) * 100, 3, 100);
+  const bucket: RangeBucket = value <= lowMax ? "low" : value >= highMin ? "high" : "moderate";
+  const good = goodDirection === "low" ? bucket === "low" : bucket === "high";
+  const bad = goodDirection === "low" ? bucket === "high" : bucket === "low";
+  return { bucket, positionPct, good, bad };
+};
+
+// Yuka publishes its scoring as three weighted parts — nutritional quality (Nutri-Score
+// based, 60%), additive risk (30%, any single high-risk additive caps the whole product at
+// 49/100), and an organic bonus (10%) — without publishing the exact per-additive numbers
+// behind it (that database is proprietary). This mirrors the published SHAPE of that method
+// using our own Nutri-Score math for the nutrition third and the model's own food-safety
+// reasoning (grounded in the same EFSA/IARC-style evidence Yuka cites) for the additive third,
+// rather than reproducing anything of Yuka's own.
+export type AdditiveRisk = "green" | "yellow" | "orange" | "red";
+export type AdditiveFlag = { name: string; risk: AdditiveRisk; note: string };
+
+export const additivesScoreFromFlags = (flags: AdditiveFlag[]) => {
+  if (!flags.length) return 100;
+  const penalty = flags.reduce((sum, f) => sum + (f.risk === "red" ? 40 : f.risk === "orange" ? 15 : f.risk === "yellow" ? 4 : 0), 0);
+  return clamp(100 - penalty, 0, 100);
+};
+export const hasHighRiskAdditive = (flags: AdditiveFlag[]) => flags.some((f) => f.risk === "red");
+
+export type ScoreBreakdown = {
+  nutrition: { score: number };
+  additives: { score: number; items: AdditiveFlag[]; applicable: boolean };
+  bonus: { organic: boolean };
+};

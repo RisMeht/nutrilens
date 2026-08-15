@@ -21,7 +21,15 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
-.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}
+/* The base camera-shade held a FLAT, constant-opacity color from 0-16% of the screen height
+   (CSS's two-position single-stop shorthand) before starting to fade — visually indistinguishable
+   from a solid header-colored bar sitting on top of the camera feed, not a gradient at all. Same
+   shape of issue existed less severely at the bottom. Now every stop is a single point, so the
+   darkening starts fading immediately from each edge instead of holding flat first — reads as
+   the camera feed extending under the header/footer chrome rather than a separate block behind it. */
+.camera-shade{background:linear-gradient(180deg,#06150d78 0%,transparent 30%,transparent 66%,#06150d7a 100%)}
+.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 .mode-switch button{transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
 .shutter span{animation:text-fade .3s ease both}
 /* A camera that's just been granted permission eases in with a little settle rather than a flat cut-to-visible. */
@@ -116,6 +124,44 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .nutrition-row{grid-template-columns:repeat(4,minmax(74px,1fr))}.alternatives-grid img{background:#e6efe2}
 @media(max-width:720px){.nutrition-row{grid-template-columns:repeat(2,minmax(100px,1fr))}}
 @media(max-width:600px){.result-photo-wrap{margin:0 -20px}.result-photo-banner{height:150px}}
+
+/* Per-nutrient range indicator (Sugar/Sodium/Sat fat/Fiber cells only — Calories/Protein/
+   Carbs/Fat have no "low-high" range to plot against): a thin low→high track with a dot
+   marking where this product actually sits, bucketed off the same Nutri-Score thresholds the
+   health score itself is built from, so it never disagrees with what the score is rewarding
+   or penalizing. */
+.nutrition-row div{position:relative;padding-bottom:19px}
+.range-bar{position:absolute;left:12px;right:12px;bottom:9px;height:4px;border-radius:2px;background:linear-gradient(90deg,#7fc768,#e8c765,#e2895f);display:block}
+.range-bar em{position:absolute;top:50%;width:7px;height:7px;border-radius:50%;background:#18311d;box-shadow:0 0 0 2px #f4f7ee;transform:translate(-50%,-50%)}
+
+/* Score breakdown: Yuka publishes its food score as three weighted parts (nutrition 60%,
+   additives 30%, organic bonus 10%) — same shape shown here, built from our own Nutri-Score
+   math and the model's own ingredient reasoning rather than any of Yuka's own data. */
+.score-breakdown{margin:20px 0;padding:16px 18px;border-radius:14px;background:#eef4ea}
+.score-breakdown>strong{font-size:14px;display:block;margin-bottom:11px}
+.breakdown-row{display:flex;align-items:center;gap:10px;margin:9px 0}
+.breakdown-row>span{width:118px;flex:none;color:#3c5240;font-size:12.5px}
+.breakdown-bar{flex:1;height:7px;border-radius:4px;background:#d5e0d0;overflow:hidden;display:block;position:relative}
+.breakdown-bar em{position:absolute;inset:0 auto 0 0;background:#4d863e;border-radius:4px;display:block;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.breakdown-row>b{width:28px;text-align:right;flex:none;font-size:13px;color:#18311d}
+.breakdown-weights{margin:12px 0 0;font-size:11px;line-height:1.4;color:#7c8c78}
+
+/* Ingredient/additive risk flags — green/yellow/orange/red dots, the same visual language
+   Yuka's own additive risk levels use, backed here by the model reading the actual ingredient
+   list rather than a lookup table. */
+.additives-section{margin:20px 0}
+.additives-section>strong{font-size:14px;display:block;margin-bottom:9px}
+.additive-clear{font-size:13px;color:#61735e;margin:0;background:#eef4ea;border-radius:10px;padding:10px 12px}
+.additive-list{display:flex;flex-direction:column;gap:7px}
+.additive-flag{display:flex;gap:10px;align-items:flex-start;background:#eef4ea;border-radius:10px;padding:9px 12px}
+.additive-flag b{display:block;font-size:13px;font-weight:600}
+.additive-flag span{display:block;font-size:12px;color:#61735e;margin-top:1px;line-height:1.35}
+.risk-dot{flex:none;width:10px;height:10px;border-radius:50%;margin-top:4px}
+.risk-green .risk-dot{background:#5fae4a}
+.risk-yellow .risk-dot{background:#dfb043}
+.risk-orange .risk-dot{background:#dd8a3d}
+.risk-red .risk-dot{background:#cf5540}
+.risk-red{background:#fbe9e5}
 
 /* Header flash/torch toggle. */
 .header-actions{display:flex;align-items:center;gap:10px}

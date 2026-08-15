@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl, wikimediaImageFor } from "../../../lib/openfoodfacts";
-import { buildHealthScore, nutrientPer100g, parseServing, toNumber } from "../../../lib/nutrition";
+import { buildHealthScore, nutrientPer100g, nutrientRange, parseServing, toNumber, type ScoreBreakdown } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
   const rawCode = new URL(request.url).searchParams.get("code") || "";
@@ -55,6 +55,13 @@ export async function GET(request: Request) {
   const hasServing = serving.grams > 0;
   const scale = hasServing ? serving.grams / 100 : 1;
   const basisLabel = hasServing ? serving.label || `${serving.grams}g` : "100g";
+  // Real Nutri-Score always judges beverages per 100ml, never per-serving — a large bottle's
+  // "serving size" is manufacturer-chosen and can otherwise make a genuinely sugary drink's
+  // absolute per-serving sugar look "low" simply because the food-density thresholds got
+  // stretched out by that same large serving size. Only applies to the range gauge below,
+  // not the actual per-serving numbers shown on screen, which stay label-accurate.
+  const isBeverage = Array.isArray(product.categories_tags) && product.categories_tags.some((tag) => typeof tag === "string" && /beverages|sodas?|soft-drinks|carbonated-drinks|waters|juices/i.test(tag));
+  const rangeScale = isBeverage ? 1 : scale;
   const display = {
     energy: per100.energy * scale,
     protein: per100.protein * scale,
@@ -115,11 +122,22 @@ export async function GET(request: Request) {
   ).slice(0, 3);
 
   const facts = [
-    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g` },
-    { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg` },
-    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g` },
-    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g` }
+    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g`, range: nutrientRange("sugar", display.sugar, rangeScale) },
+    { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg`, range: nutrientRange("sodiumMg", display.sodiumMg, rangeScale) },
+    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g`, range: nutrientRange("satFat", display.satFat, rangeScale) },
+    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g`, range: nutrientRange("fiber", display.fiber, rangeScale) }
   ];
+
+  // Yuka's published methodology is three parts — nutritional quality (60%), additive risk
+  // (30%), organic bonus (10%). This is the instant, deterministic slice of that breakdown;
+  // /api/barcode/enrich fills in the additive-risk part moments later (it needs the model to
+  // actually read the ingredient list), the same two-endpoint split the rest of this route uses.
+  const isOrganic = Array.isArray(product.labels_tags) && product.labels_tags.some((tag) => typeof tag === "string" && /organic/i.test(tag));
+  const breakdown: ScoreBreakdown = {
+    nutrition: { score },
+    additives: { score: 100, items: [], applicable: ingredientsText.length > 0 },
+    bonus: { organic: isOrganic }
+  };
 
   // Open Food Facts is community-edited, and fields like "quantity" occasionally contain
   // garbage (e.g. "55unknown") — only surface it if it actually looks like a size/weight.
@@ -152,6 +170,7 @@ export async function GET(request: Request) {
       ? "Always check the package label for allergy and ingredient updates before consuming."
       : "Some details are missing in the source database. Verify with the product label.",
     facts,
+    breakdown,
     code
   });
 }
