@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
-import { gradeForScore, toNumber } from "../../../lib/nutrition";
+import { gradeForScore, toNumber, SCORING_RUBRIC } from "../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const system = `You are NutriLens, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
-{"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+{"visible":boolean,"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
 Rules:
-- Use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown. Use 0 for a nutrient you truly can't estimate.
+- Set visible to false if the photo does NOT clearly show a specific, identifiable food or packaged product — e.g. it's blank, black, too dark, blurry, or shows something unrelated to food. In that case set every other field to an empty/zero default and do not guess a specific dish — never invent a plausible-sounding food that isn't actually shown. Only set visible to true when you can genuinely identify what's in the photo.
+- When visible is true, use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown. Use 0 for a nutrient you truly can't estimate.
 - If serving size is uncertain, state uncertainty in summary and caution.
 - Never invent ingredient lists, medical claims, or disease advice.
-- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment, and don't let one moderate number dominate an otherwise good choice. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
+- ${SCORING_RUBRIC}
 - Do not include a "grade" field — it is computed from the score.
 - Keep highlights and concerns short and concrete, max 2-3 each — only include a concern that's genuinely notable.
 - Alternatives must be realistic healthier swaps for the same food type, max 3.`;
@@ -63,6 +64,11 @@ export async function POST(request: Request) {
   try {
     const content = data.choices?.[0]?.message?.content;
     const parsed = JSON.parse(content ?? "{}");
+
+    if (parsed.visible === false) {
+      return NextResponse.json({ error: "We couldn't identify a food item in that photo. Try a clearer, well-lit shot." }, { status: 422 });
+    }
+
     const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
     const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : 0;
 

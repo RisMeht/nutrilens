@@ -3,7 +3,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType } from "@zxing/library";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, Sparkles, SwitchCamera, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, SwitchCamera, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 type Alternative = { name: string; image?: string };
@@ -86,7 +86,7 @@ const normalizeAlternatives = (alts?: unknown): Alternative[] => {
 export default function Home() {
   const [mode, setMode] = useState<ScanMode>("food"), [cameraOn, setCameraOn] = useState(false), [entered, setEntered] = useState(false), [facing, setFacing] = useState<"environment" | "user">("environment");
   const [loading, setLoading] = useState(false), [result, setResult] = useState<Result | null>(null), [error, setError] = useState(""), [cameraError, setCameraError] = useState(""), [helpOpen, setHelpOpen] = useState(false);
-  const [enriching, setEnriching] = useState(false);
+  const [sheetClosing, setSheetClosing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
   const [torchOn, setTorchOn] = useState(false), [torchSupported, setTorchSupported] = useState(false);
@@ -123,51 +123,47 @@ export default function Home() {
     return () => cancelAnimationFrame(raf);
   }, [scoreValue]);
 
-  const enrichBarcode = useCallback(async (code: string) => {
-    try {
-      const response = await fetch("/api/barcode/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "AI enrichment failed.");
-      setResult((prev) => {
-        if (!prev) return null;
-        const alternatives = normalizeAlternatives(data.alternatives);
-        return {
-          ...prev,
-          score: typeof data.score === "number" ? data.score : prev.score,
-          grade: typeof data.grade === "string" ? data.grade : prev.grade,
-          summary: typeof data.summary === "string" ? data.summary : prev.summary,
-          highlights: Array.isArray(data.highlights) && data.highlights.length ? data.highlights : prev.highlights,
-          concerns: Array.isArray(data.concerns) ? data.concerns : prev.concerns,
-          alternatives: alternatives.length ? alternatives : prev.alternatives,
-          caution: typeof data.caution === "string" ? data.caution : prev.caution
-        };
-      });
-    } catch {
-      setError("Loaded product details, but AI insights are unavailable right now.");
-    } finally {
-      setEnriching(false);
-    }
-  }, []);
-
+  // Both the instant Open Food Facts lookup and the Gemini enrichment are fetched together
+  // (in parallel, so the wait is roughly max() not sum()) and merged into ONE result before
+  // anything is shown — previously the deterministic score appeared first and then visibly
+  // changed once Gemini responded, which read as a bug rather than a feature. The camera
+  // stays live the whole time (see below) so the scan screen doesn't flash back to its
+  // empty state while this is in flight.
   const barcodeResult = useCallback(async (code: string) => {
-    stopCamera();
-    setCameraOn(false);
     setLoading(true);
     setError("");
-    setEnriching(false);
     try {
-      const r = await fetch(`/api/barcode?code=${encodeURIComponent(code)}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error);
-      setResult({ ...data, alternatives: normalizeAlternatives(data.alternatives) });
-      setEnriching(true);
-      void enrichBarcode(code);
+      const [offRes, enrichRes] = await Promise.allSettled([
+        fetch(`/api/barcode?code=${encodeURIComponent(code)}`).then(async r => ({ ok: r.ok, data: await r.json() })),
+        fetch("/api/barcode/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).then(async r => ({ ok: r.ok, data: await r.json() }))
+      ]);
+      if (offRes.status !== "fulfilled" || !offRes.value.ok) {
+        throw new Error(offRes.status === "fulfilled" ? offRes.value.data.error : "We couldn’t look up that barcode.");
+      }
+      const base = offRes.value.data;
+      let merged = base;
+      if (enrichRes.status === "fulfilled" && enrichRes.value.ok) {
+        const e = enrichRes.value.data;
+        merged = {
+          ...base,
+          score: typeof e.score === "number" ? e.score : base.score,
+          grade: typeof e.grade === "string" ? e.grade : base.grade,
+          summary: typeof e.summary === "string" ? e.summary : base.summary,
+          highlights: Array.isArray(e.highlights) && e.highlights.length ? e.highlights : base.highlights,
+          concerns: Array.isArray(e.concerns) ? e.concerns : base.concerns,
+          alternatives: Array.isArray(e.alternatives) && e.alternatives.length ? e.alternatives : base.alternatives,
+          caution: typeof e.caution === "string" ? e.caution : base.caution
+        };
+      }
+      setResult({ ...merged, alternatives: normalizeAlternatives(merged.alternatives) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "We couldn’t look up that barcode.");
     } finally {
       setLoading(false);
+      stopCamera();
+      setCameraOn(false);
     }
-  }, [enrichBarcode, stopCamera]);
+  }, [stopCamera]);
 
   // Opens the raw camera stream once per (cameraOn, facing) pair. This is intentionally
   // NOT re-run when `mode` changes: requesting getUserMedia again on every Food/Barcode
@@ -224,7 +220,7 @@ export default function Home() {
   }, [mode, cameraOn, cameraReady, barcodeResult]);
   useEffect(() => () => stopCamera(), [stopCamera]);
   const analyze = async (image: string) => {
-    setLoading(true); setError(""); setEnriching(false);
+    setLoading(true); setError("");
     try {
       const r = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image }) });
       const data = await r.json();
@@ -246,18 +242,21 @@ export default function Home() {
     // Only retry acquiring it here if it never actually came up (e.g. permission was denied).
     if (cameraOn && !cameraReady) { setCameraError(""); setCameraOn(false); requestAnimationFrame(() => setCameraOn(true)); }
   };
-  const scanAgain = () => { setResult(null); setError(""); setCameraError(""); setEnriching(false); setCameraOn(true); };
+  const scanAgain = () => {
+    setSheetClosing(true);
+    setCameraOn(true); // start reopening the camera immediately, in parallel with the sheet's own closing animation
+    window.setTimeout(() => { setResult(null); setError(""); setCameraError(""); setSheetClosing(false); }, 220);
+  };
   const grade = result?.grade?.toLowerCase() || "a";
   const displayNumber = (value: number | undefined, suffix = "") => Number.isFinite(value) ? `${value}${suffix}` : "—";
-  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><p><Sparkles size={13} /> SMART FOOD SCANNER</p><h1>Know your<br /><i>next bite.</i></h1><span>Food scores made simple.</span></div><div className="home-card"><div className="home-bowl">🥑<b>🥕</b><i>🍅</i></div><div><strong>Scan food</strong><span>Photo or barcode</span></div><em>01</em></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><h1>NutriLens</h1><span>Know what’s healthy, instantly.</span></div><div className="home-card"><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
     <header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></div></header>
-    <div className="top-copy"><h1>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
-    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && <div className="scan-beam" />}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
-    <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
-  </section><input ref={imageInput} type="file" accept="image/*" capture="environment" hidden onChange={e => file(e.target.files?.[0])} />
-  {loading && <div className="scan-progress">{mode === "food" ? <div className="pulse-bars"><i /><i /><i /><i /><i /></div> : <LoaderCircle className="spin scan-progress-icon" size={42} />}</div>}
-  {!loading && (result || error) && <div className="result-sheet"><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-heading"><img className="result-photo" src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /><div className="result-title"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{enriching && <div className="ai-status"><LoaderCircle className="spin" size={16} /><span>Loading Gemini health insights…</span></div>}{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+    <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
+    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{((mode === "barcode" && !loading) || (mode === "food" && loading)) && <div className="scan-beam" />}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}{loading && mode === "barcode" && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={42} /></div>}
+    <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
+  </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
+  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
 }
 
 // A real drag-to-confirm slider (not just a button styled to look like one): the thumb
@@ -290,7 +289,7 @@ function SwipeEnter({ onComplete }: { onComplete: () => void }) {
     if (maxXRef.current > 0 && dragX >= maxXRef.current * 0.7) {
       setCompleted(true);
       setDragX(maxXRef.current);
-      window.setTimeout(onComplete, 260);
+      onComplete(); // fires the screen transition immediately — it plays alongside the thumb's own snap animation rather than waiting for it to finish first
     } else {
       setDragX(0);
     }
@@ -307,5 +306,7 @@ function SwipeEnter({ onComplete }: { onComplete: () => void }) {
 }
 
 function Help({ onClose }: { onClose: () => void }) {
-  return <div className="help-backdrop" onClick={onClose}><section className="help-card" onClick={event => event.stopPropagation()}><button onClick={onClose}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p></section></div>;
+  const [closing, setClosing] = useState(false);
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p></section></div>;
 }

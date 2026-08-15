@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
-import { gradeForScore, nutrientPer100g, parseServing, toNumber } from "../../../../lib/nutrition";
+import { gradeForScore, nutrientPer100g, parseServing, toNumber, SCORING_RUBRIC } from "../../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -9,7 +9,7 @@ const system = `You are NutriLens AI, a nutrition expert interpreting one packag
 Return ONLY valid JSON with this exact shape:
 {"score":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
 Rules:
-- score is 0-100, higher meaning a more nutritious everyday choice. Judge holistically like a nutritionist, not a rigid points formula — base it on nutrients_per_100g (the standard, comparable nutrition-density basis) so it's not skewed by serving size: weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and unnecessary processing negatively — but use real judgment. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper. Don't let one moderate number (e.g. saturated fat from a chocolate coating) tank an otherwise excellent product. Roughly: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality.
+- ${SCORING_RUBRIC} Base the score on nutrients_per_100g (the standard, comparable nutrition-density basis) so it isn't skewed by serving size. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper.
 - When highlights/concerns cite a specific amount, cite the nutrients_per_serving numbers (that's what's shown on screen) using the given serving label — never cite the per-100g numbers directly, and never invent a serving size other than the one given.
 - Use only the provided nutrition and ingredient facts. Do not invent nutrients or medical claims.
 - Keep highlights/concerns short and concrete, max 3 each. Only include a concern that's genuinely notable — don't pad the list.

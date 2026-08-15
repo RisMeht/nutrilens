@@ -1,32 +1,55 @@
 /* Final responsive polish layer: desktop has breathing room; phone stays app-like. */
-.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:16%}.home-copy p{justify-content:center;margin-bottom:34px}.home-copy h1{font-size:clamp(48px,6vw,76px);white-space:normal;line-height:1.05;margin:0}.home-copy>span{display:block;margin-top:28px}.home-card{top:56%;width:min(410px,calc(100vw - 44px))}
-.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600}.top-copy p,.top-copy span{display:none}.focus-frame{top:47%;transition:width .13s cubic-bezier(.3,.7,.4,1),height .13s cubic-bezier(.3,.7,.4,1)}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .focus-frame,.mode-food .focus-frame{animation:frame-in .12s ease both}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes frame-in{from{opacity:.4}to{opacity:1}}
-@media(max-width:600px){.home-copy{top:15%}.home-card{top:52%}.top-copy{top:11%}.focus-frame{top:46%}}
-.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:46px}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:78px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.result-content{padding-top:50px}.alternatives-grid img{height:68px}}
+.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:38%}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
+.home-card{top:64%;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center}
+.home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
+.home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
+.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .28s ease both}.top-copy p,.top-copy span{display:none}.focus-frame{top:47%;transition:width .24s cubic-bezier(.25,.8,.3,1),height .24s cubic-bezier(.25,.8,.3,1)}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .focus-frame,.mode-food .focus-frame{animation:frame-in .22s ease both}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes frame-in{from{opacity:.4}to{opacity:1}}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.mode-switch button{transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
+.shutter span{animation:text-fade .22s ease both}
+/* A camera that's just been granted permission eases in with a little settle rather than a flat cut-to-visible. */
+.camera-feed{transform:scale(1.04);transition:opacity .5s ease,transform .7s cubic-bezier(.2,.8,.2,1)}.camera-active .camera-feed{transform:scale(1)}
+@media(max-width:600px){.home-copy{top:34%}.home-card{top:60%}.top-copy{top:11%}.focus-frame{top:46%}}
 
-/* Minimal loading indicator — no card, no backdrop, just the indicator itself floating over
-   the live camera view (a drop-shadow keeps it legible against any background) so "in
-   progress" never reads as a blocking pop-up. */
+.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:78px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:68px}}
+
+/* Closing animations — both the help dialog and the results sheet used to unmount instantly
+   with no exit transition ("flash closed"). A brief local "closing" state now plays a real
+   exit animation before the parent actually removes the content. */
+.help-backdrop.closing{animation:fade-out .2s ease forwards}
+.help-card.closing{animation:sheet-out .2s ease forwards}
+.result-sheet.closing{animation:fade-out .22s ease forwards}
+.result-sheet.closing .sheet-card{animation:sheet-out .22s ease forwards}
+@keyframes fade-out{to{opacity:0}}
+@keyframes sheet-out{to{opacity:0;transform:translateY(16px) scale(.97)}}
+
+/* Minimal loading indicator for barcode lookups — no card, no backdrop, just the spinner
+   floating over the still-live camera view (a drop-shadow keeps it legible against any
+   background) so "in progress" never reads as a blocking pop-up. Food-mode "loading" instead
+   reuses the scan-beam inside the focus frame (see the beam rules below) for one consistent
+   scanning visual language. */
 .scan-progress{position:fixed;inset:0;z-index:6;display:grid;place-items:center;pointer-events:none;animation:fade-in .15s ease}
-.pulse-bars{display:flex;align-items:center;gap:5px;height:38px;filter:drop-shadow(0 3px 10px #06150dcc)}
-.pulse-bars i{width:5px;border-radius:3px;background:#baff59;animation:pulse-bar 1s ease-in-out infinite}
-.pulse-bars i:nth-child(1){animation-delay:0s}.pulse-bars i:nth-child(2){animation-delay:.11s}.pulse-bars i:nth-child(3){animation-delay:.22s}.pulse-bars i:nth-child(4){animation-delay:.33s}.pulse-bars i:nth-child(5){animation-delay:.44s}
-@keyframes pulse-bar{0%,100%{height:10px}50%{height:38px}}
 .scan-progress-icon{color:#baff59;filter:drop-shadow(0 3px 10px #06150dcc)}
+.scan-beam{transition:opacity .25s ease}
 
-/* Result header: scanned-item photo + title block + score ring. */
-.result-heading{align-items:center;gap:14px;justify-content:flex-start}
-.result-photo{flex:none;width:64px;height:64px;border-radius:16px;object-fit:cover;background:#e6efe2;box-shadow:0 4px 14px #0002}
-.result-title{flex:1;min-width:0}
-.score-ring{flex:none;margin-left:auto}
+/* Result header: a full-width photo banner with the score ring badged over its bottom-right
+   corner, title block below. Replaces a small inline thumbnail that left a large empty gap
+   next to the text and gave long names nowhere to wrap without crowding the photo. */
+.result-photo-banner{position:relative;margin:0 -30px;height:180px;overflow:hidden;border-radius:28px 28px 0 0;background:#e6efe2}
+.result-photo-banner img{width:100%;height:100%;object-fit:cover;display:block}
+.result-photo-banner .score-ring{position:absolute;right:18px;bottom:-28px;box-shadow:0 10px 24px #0007}
+.result-title-block{padding-top:40px}
+.result-title-block p{font:11px "DM Mono";letter-spacing:.1em;color:#528244;margin:0}
+.result-title-block h2{font-size:clamp(24px,4.5vw,34px);line-height:1.12;letter-spacing:-.04em;margin:9px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.result-title-block span{color:#61735e;font-size:14px;line-height:1.45;display:block}
 
 /* The whole results card animates in as one piece via .sheet-card's own entrance (no extra
    per-child stagger — that read as flashing/laggy). The AI-derived section is the one thing
    that legitimately arrives later, so it gets exactly one further fade-in when it mounts. */
 .ai-insights{animation:rise-in .4s cubic-bezier(.2,.8,.2,1) both}
 @keyframes rise-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@media(max-width:600px){.result-photo{width:54px;height:54px;border-radius:13px}}
-.result-heading h2,.result-heading span{word-break:break-word}.nutrition-row{grid-template-columns:repeat(4,minmax(74px,1fr))}.alternatives-grid img{background:#e6efe2}@media(max-width:720px){.result-heading{gap:10px}.nutrition-row{grid-template-columns:repeat(2,minmax(100px,1fr))}}
+.nutrition-row{grid-template-columns:repeat(4,minmax(74px,1fr))}.alternatives-grid img{background:#e6efe2}
+@media(max-width:720px){.nutrition-row{grid-template-columns:repeat(2,minmax(100px,1fr))}}
+@media(max-width:600px){.result-photo-banner{margin:0 -20px;height:150px}}
 
 /* Header flash/torch toggle. */
 .header-actions{display:flex;align-items:center;gap:10px}

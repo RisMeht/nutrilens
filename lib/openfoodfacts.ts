@@ -109,6 +109,36 @@ export const findBetterSwaps = async ({
     .map(({ name, image }) => ({ name, image }));
 };
 
+// Free, no-key, legally-clear real photos for generic/home foods that Open Food Facts (mostly
+// packaged branded products) doesn't carry — e.g. "grilled chicken salad" won't have a
+// barcode product photo, but Wikimedia Commons likely has a real one. Deliberately not using
+// real-time AI image generation here: that has a per-image cost and adds latency to every
+// scan, a tradeoff worth confirming with the user first rather than wiring up silently.
+const wikimediaImageFor = async (query: string): Promise<string> => {
+  const url = new URL("https://commons.wikimedia.org/w/api.php");
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", `filetype:bitmap ${query} food`);
+  url.searchParams.set("gsrnamespace", "6");
+  url.searchParams.set("gsrlimit", "3");
+  url.searchParams.set("prop", "imageinfo");
+  url.searchParams.set("iiprop", "url|mime");
+  url.searchParams.set("iiurlwidth", "400");
+  url.searchParams.set("format", "json");
+
+  const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 6000).catch(() => null);
+  if (!response?.ok) return "";
+  const data = await response.json();
+  const pages: Record<string, unknown>[] = data?.query?.pages ? Object.values(data.query.pages) : [];
+  for (const page of pages) {
+    const info = (page.imageinfo as Record<string, unknown>[] | undefined)?.[0];
+    const mime = typeof info?.mime === "string" ? info.mime : "";
+    const thumb = typeof info?.thumburl === "string" ? info.thumburl : "";
+    if (thumb && mime.startsWith("image/")) return thumb;
+  }
+  return "";
+};
+
 export const enrichAlternativesWithImages = async (alternatives: unknown) => {
   if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string }>;
   const names = alternatives
@@ -133,24 +163,24 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       searchUrl.searchParams.set("fields", "product_name,product_name_en,image_front_small_url,image_front_url");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
-      if (!response?.ok) return { name, image: "" };
-      const data = await response.json();
-      const products: Record<string, unknown>[] = Array.isArray(data?.products) ? data.products : [];
+      const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.products ?? [] : [];
       const withImage = products.find((item) =>
         (typeof item.image_front_url === "string" && item.image_front_url) ||
         (typeof item.image_front_small_url === "string" && item.image_front_small_url)
       );
-      const image = withImage
+      const offImage = withImage
         ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
           (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
           ""
         : "";
-      return { name, image };
+      if (offImage) return { name, image: offImage };
+
+      const wikiImage = await wikimediaImageFor(name).catch(() => "");
+      return { name, image: wikiImage };
     })
   );
 
-  // Keep every suggested alternative even when Open Food Facts has no product photo for it
-  // (common for generic/home foods, since OFF mostly covers packaged branded products) — the
+  // Keep every suggested alternative even when neither source has a photo for it — the
   // client falls back to a generated placeholder tile rather than the swap disappearing entirely.
   return resolved;
 };

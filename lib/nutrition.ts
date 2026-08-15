@@ -2,6 +2,13 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 export const gradeForScore = (score: number) => (score >= 80 ? "A" : score >= 65 ? "B" : score >= 45 ? "C" : score >= 25 ? "D" : "E");
 
+// Shared verbatim between the barcode (enrich) and food-photo (analyze) AI prompts. Scanning
+// the same real product by barcode vs. photo used to produce visibly different scores because
+// the two prompts described "healthy" in slightly different words — using one shared rubric
+// closes that gap as much as prompt wording can.
+export const SCORING_RUBRIC =
+  'score is 0-100, higher meaning a more nutritious everyday choice for a generally healthy adult. Reason like an experienced nutritionist, not a rigid points formula: weigh protein, fiber, whole-food ingredients and micronutrient density positively; weigh added sugar, sodium, saturated fat and unnecessary ultra-processing negatively. Use real judgment — don\'t let one moderate number (e.g. saturated fat from a chocolate coating, or sodium in an otherwise excellent high-protein food) drag down an otherwise strong choice, and don\'t reward a product just for being low-calorie if it is nutritionally empty. Bands: 80-100 excellent everyday choice, 65-79 solid choice, 45-64 mixed/moderate, 25-44 noticeably unbalanced, 0-24 poor nutritional quality. Score the same real product consistently regardless of how it was scanned.';
+
 export const toNumber = (value: unknown) => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
