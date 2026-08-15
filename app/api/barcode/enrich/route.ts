@@ -39,7 +39,9 @@ export async function POST(request: Request) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return NextResponse.json({ error: "OPENROUTER_API_KEY is not configured on the server." }, { status: 503 });
 
-  const productResponse = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`, {
+  const lookupUrl = new URL("https://world.openfoodfacts.org/api/v2/product/00000000.json");
+  lookupUrl.pathname = `/api/v2/product/${code}.json`;
+  const productResponse = await fetch(lookupUrl, {
     headers: { "User-Agent": "NutriLens/1.0 (nutrition scanner)" },
     next: { revalidate: 86400 }
   });
@@ -73,7 +75,7 @@ export async function POST(request: Request) {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `******
+      Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title": "NutriLens"

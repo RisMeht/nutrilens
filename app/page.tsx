@@ -28,19 +28,19 @@ type Result = {
 type ScanMode = "food" | "barcode";
 
 const fallbackFoodImage = (name: string) => `https://source.unsplash.com/640x480/?food,${encodeURIComponent(name)}`;
-const normalizeAlternatives = (alts?: unknown): Alternative[] =>
-  Array.isArray(alts)
-    ? alts
-        .map((item) => {
-          if (typeof item === "string") return { name: item, image: fallbackFoodImage(item) };
-          if (item && typeof item === "object" && "name" in item && typeof (item as { name: unknown }).name === "string") {
-            const alt = item as { name: string; image?: unknown };
-            return { name: alt.name, image: typeof alt.image === "string" && alt.image ? alt.image : fallbackFoodImage(alt.name) };
-          }
-          return null;
-        })
-        .filter((item): item is Alternative => Boolean(item))
-    : [];
+const normalizeAlternatives = (alts?: unknown): Alternative[] => {
+  if (!Array.isArray(alts)) return [];
+  return alts
+    .map((item): Alternative | null => {
+      if (typeof item === "string") return { name: item, image: fallbackFoodImage(item) };
+      if (item && typeof item === "object" && "name" in item && typeof (item as { name: unknown }).name === "string") {
+        const alt = item as { name: string; image?: unknown };
+        return { name: alt.name, image: typeof alt.image === "string" && alt.image ? alt.image : fallbackFoodImage(alt.name) };
+      }
+      return null;
+    })
+    .filter((item): item is Alternative => item !== null);
+};
 
 export default function Home() {
   const [mode, setMode] = useState<ScanMode>("food"), [cameraOn, setCameraOn] = useState(false), [entered, setEntered] = useState(false), [facing, setFacing] = useState<"environment" | "user">("environment");

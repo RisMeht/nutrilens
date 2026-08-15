@@ -43,10 +43,13 @@ const buildHealthScore = (nutriments: Record<string, unknown>, additivesCount: n
 };
 
 export async function GET(request: Request) {
-  const code = new URL(request.url).searchParams.get("code")?.replace(/\D/g, "");
-  if (!code || code.length < 8) return NextResponse.json({ error: "Enter a valid barcode." }, { status: 400 });
+  const rawCode = new URL(request.url).searchParams.get("code") || "";
+  if (!/^\d{8,14}$/.test(rawCode)) return NextResponse.json({ error: "Enter a valid barcode." }, { status: 400 });
+  const code = rawCode;
+  const lookupUrl = new URL("https://world.openfoodfacts.org/api/v2/product/00000000.json");
+  lookupUrl.pathname = `/api/v2/product/${code}.json`;
 
-  const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`, {
+  const response = await fetch(lookupUrl, {
     headers: { "User-Agent": "NutriLens/1.0 (nutrition scanner)" },
     next: { revalidate: 86400 }
   });

@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `******
+      Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title": "NutriLens"
