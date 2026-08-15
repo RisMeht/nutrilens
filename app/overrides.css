@@ -9,19 +9,53 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .result-sheet{-webkit-backdrop-filter:blur(10px)}
 
 .home-header{justify-content:flex-end}
-.home-logo{width:52px;height:52px;border-radius:16px;display:block;margin:0 auto 18px}
-.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:36%}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
-.home-card{top:64%;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center}
+.home-logo{width:88px;height:88px;border-radius:24px;display:block;margin:0 auto 20px;box-shadow:0 10px 26px #06150d80}
+.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:34%}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
+.home-card{top:66%;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center}
 .home-card:before{display:none}
 .home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
-.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}.focus-frame{top:47%;transition:width .42s cubic-bezier(.22,.7,.2,1),height .42s cubic-bezier(.22,.7,.2,1)}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .focus-frame,.mode-food .focus-frame{animation:frame-in .38s ease both}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes frame-in{from{opacity:.4}to{opacity:1}}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 .mode-switch button{transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
 .shutter span{animation:text-fade .3s ease both}
 /* A camera that's just been granted permission eases in with a little settle rather than a flat cut-to-visible. */
 .camera-feed{transform:scale(1.04);transition:opacity .5s ease,transform .7s cubic-bezier(.2,.8,.2,1)}.camera-active .camera-feed{transform:scale(1)}
-@media(max-width:600px){.home-copy{top:32%}.home-card{top:60%}.top-copy{top:11%}.focus-frame{top:46%}}
+
+/* The Food/Barcode frame resize used to animate width/height directly, which forces a layout
+   reflow on every frame — cheap enough on desktop to look smooth, but expensive enough on
+   phones that the browser dropped frames and the "animation" looked like an instant flash
+   instead. Fixed: the frame's own box is now a constant, never-animated size (large enough to
+   contain both shapes), and only the 4 corner brackets move — via transform:translate, which
+   is GPU-composited and stays smooth on any device regardless of layout cost. Each corner
+   keeps its own fixed 49x49 shape throughout, so nothing stretches or distorts mid-transition. */
+.focus-frame{top:47%;width:600px;height:390px;min-width:0;min-height:0}
+.focus-frame i{transition:transform .55s cubic-bezier(.22,.75,.2,1)}
+.focus-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),calc((390px - clamp(245px,45vw,390px)) / 2))}
+.focus-frame i:nth-child(2){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),calc((390px - clamp(245px,45vw,390px)) / 2))}
+.focus-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),calc((clamp(245px,45vw,390px) - 390px) / 2))}
+.focus-frame i:nth-child(4){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),calc((clamp(245px,45vw,390px) - 390px) / 2))}
+.barcode-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),100px)}
+.barcode-frame i:nth-child(2){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),100px)}
+.barcode-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),-100px)}
+.barcode-frame i:nth-child(4){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),-100px)}
+.mode-food .scan-beam{width:clamp(285px,58vw,570px)}
+.mode-barcode .scan-beam{width:clamp(285px,72vw,600px)}
+/* The beam's width is now narrower than its (fixed-size) container, so it needs its own
+   horizontal centering — folded into the same keyframe as the vertical pulse since an element
+   can only have one active `transform`. */
+.scan-beam{left:50%;transform:translateX(-50%)}
+@keyframes beam{0%,100%{transform:translateX(-50%) translateY(-78px);opacity:.25}50%{transform:translateX(-50%) translateY(78px);opacity:1}}
+@media(max-width:600px){.home-copy{top:32%}.home-card{top:60%}.top-copy{top:11%}.focus-frame{top:46%}
+  .focus-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),60px)}
+  .focus-frame i:nth-child(2){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),60px)}
+  .focus-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),-60px)}
+  .focus-frame i:nth-child(4){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),-60px)}
+  .barcode-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),120px)}
+  .barcode-frame i:nth-child(2){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),120px)}
+  .barcode-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),-120px)}
+  .barcode-frame i:nth-child(4){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),-120px)}
+}
 
 .sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:110px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:92px}}
 

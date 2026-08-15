@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
 import { gradeForScore, nutrientPer100g, parseServing, toNumber, SCORING_RUBRIC } from "../../../../lib/nutrition";
+import { resolveModel } from "../../../../lib/ai-model";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
-{"score":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
+{"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","score":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
+Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific product, then let the score follow from that.
 Rules:
 - ${SCORING_RUBRIC} Base the score on nutrients_per_100g (the standard, comparable nutrition-density basis) so it isn't skewed by serving size. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper.
 - When highlights/concerns cite a specific amount, cite the nutrients_per_serving numbers (that's what's shown on screen) using the given serving label — never cite the per-100g numbers directly, and never invent a serving size other than the one given.
@@ -59,8 +61,7 @@ export async function POST(request: Request) {
     nutrients_per_serving
   };
 
-  const requestedModel = process.env.OPENROUTER_MODEL;
-  const model = requestedModel === "mistralai/ministral-3-8b" ? "google/gemini-2.5-flash-lite" : requestedModel || "google/gemini-2.5-flash-lite";
+  const model = resolveModel();
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -72,8 +73,10 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       model,
-      temperature: 0.2,
-      max_tokens: 420,
+      // Deterministic (or as close as the provider allows): scanning the same barcode twice
+      // should return the same score, not a different one each time.
+      temperature: 0,
+      max_tokens: 480,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },

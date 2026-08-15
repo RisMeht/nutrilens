@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
 import { gradeForScore, toNumber, SCORING_RUBRIC } from "../../../lib/nutrition";
+import { resolveModel } from "../../../lib/ai-model";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const system = `You are NutriLens, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
-{"visible":boolean,"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+{"visible":boolean,"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific food, then let the score follow from that.
 Rules:
 - Set visible to false if the photo does NOT clearly show a specific, identifiable food or packaged product — e.g. it's blank, black, too dark, blurry, or shows something unrelated to food. In that case set every other field to an empty/zero default and do not guess a specific dish — never invent a plausible-sounding food that isn't actually shown. Only set visible to true when you can genuinely identify what's in the photo.
 - When visible is true, use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown. Use 0 for a nutrient you truly can't estimate.
@@ -30,8 +32,7 @@ export async function POST(request: Request) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return NextResponse.json({ error: "OPENROUTER_API_KEY is not configured on the server." }, { status: 503 });
 
-  const requestedModel = process.env.OPENROUTER_MODEL;
-  const model = requestedModel === "mistralai/ministral-3-8b" ? "google/gemini-2.5-flash-lite" : requestedModel || "google/gemini-2.5-flash-lite";
+  const model = resolveModel();
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -42,8 +43,10 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       model,
-      temperature: 0.15,
-      max_tokens: 550,
+      // Deterministic (or as close as the provider allows): the same photo of the same food
+      // scanned twice should give the same score, not a different one each time.
+      temperature: 0,
+      max_tokens: 620,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },

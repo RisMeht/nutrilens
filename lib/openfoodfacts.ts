@@ -26,10 +26,15 @@ export const fetchOpenFoodFactsProduct = async (code: string) => {
   return null;
 };
 
+// Open Food Facts serves each photo at a few fixed widths (100/200/400) via a numeric
+// filename suffix, plus one true full-resolution original at the same path with ".full"
+// instead — meaningfully sharper than the 400px version the API links to by default.
+const toFullSizeImage = (url: string): string => url.replace(/\.\d+\.(jpe?g|png)$/i, ".full.$1");
+
 export const productImageUrl = (product: Record<string, unknown>): string => {
   const candidates = [product.image_front_url, product.image_url, product.image_front_small_url, product.image_small_url];
   const found = candidates.find((value): value is string => typeof value === "string" && value.length > 0);
-  return found || "";
+  return found ? toFullSizeImage(found) : "";
 };
 
 const categoryOverlap = (a: unknown, b: unknown) => {
@@ -88,8 +93,9 @@ export const findBetterSwaps = async ({
       const sodiumMg = toNumber(nutriments.sodium_100g) * 1000;
       const satFat = toNumber(nutriments["saturated-fat_100g"]);
       const energy = toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
-      const image = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
-      if (!image) return null;
+      const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
+      if (!rawImage) return null;
+      const image = toFullSizeImage(rawImage);
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
       const improvement =
@@ -123,7 +129,7 @@ export const wikimediaImageFor = async (query: string): Promise<string> => {
   url.searchParams.set("gsrlimit", "3");
   url.searchParams.set("prop", "imageinfo");
   url.searchParams.set("iiprop", "url|mime");
-  url.searchParams.set("iiurlwidth", "640");
+  url.searchParams.set("iiurlwidth", "1200");
   url.searchParams.set("format", "json");
 
   const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 6000).catch(() => null);
@@ -168,12 +174,12 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
         (typeof item.image_front_url === "string" && item.image_front_url) ||
         (typeof item.image_front_small_url === "string" && item.image_front_small_url)
       );
-      const offImage = withImage
+      const rawOffImage = withImage
         ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
           (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
           ""
         : "";
-      if (offImage) return { name, image: offImage };
+      if (rawOffImage) return { name, image: toFullSizeImage(rawOffImage) };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
       return { name, image: wikiImage };
