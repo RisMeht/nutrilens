@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
-import { nutrientPerServing, parseServing, toNumber } from "../../../../lib/nutrition";
+import { hasServingNutrientData, nutrientPer100g, nutrientPerServing, parseServing, toNumber } from "../../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -9,7 +9,7 @@ const system = `You are NutriLens AI for packaged food interpretation.
 Return ONLY valid JSON with this exact shape:
 {"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string"}
 Rules:
-- Use only the provided nutrition and ingredient facts.
+- Use only the provided nutrition and ingredient facts, and the exact basis (per-serving or per-100g) given — do not relabel per-100g figures as "per serving" or vice versa.
 - Do not invent nutrients, serving sizes, or medical claims.
 - Keep output concise, practical, and evidence-based.
 - Alternatives must be realistic healthier packaged swaps.`;
@@ -29,9 +29,32 @@ export async function POST(request: Request) {
   }
 
   const nutriments = (product.nutriments || {}) as Record<string, unknown>;
-  const serving = parseServing(product.serving_size);
-  const servingLabel = serving.label === "Not listed" ? "1 serving" : serving.label;
+  const serving = parseServing(product.serving_size, product.serving_quantity);
+  const useServingBasis = serving.grams > 0 || hasServingNutrientData(nutriments);
   const servingGrams = serving.grams;
+  const basis = useServingBasis ? serving.label || "1 serving" : "100g (no serving size listed by the manufacturer)";
+
+  const nutrients = useServingBasis
+    ? {
+        calories: nutrientPerServing(nutriments, "energy-kcal_100g", "energy-kcal_serving", servingGrams) ?? nutrientPer100g(nutriments, "energy-kcal_100g"),
+        protein_g: nutrientPerServing(nutriments, "proteins_100g", "proteins_serving", servingGrams) ?? nutrientPer100g(nutriments, "proteins_100g"),
+        carbs_g: nutrientPerServing(nutriments, "carbohydrates_100g", "carbohydrates_serving", servingGrams) ?? nutrientPer100g(nutriments, "carbohydrates_100g"),
+        fat_g: nutrientPerServing(nutriments, "fat_100g", "fat_serving", servingGrams) ?? nutrientPer100g(nutriments, "fat_100g"),
+        sugar_g: nutrientPerServing(nutriments, "sugars_100g", "sugars_serving", servingGrams) ?? nutrientPer100g(nutriments, "sugars_100g"),
+        sodium_mg: (nutrientPerServing(nutriments, "sodium_100g", "sodium_serving", servingGrams) ?? nutrientPer100g(nutriments, "sodium_100g")) * 1000,
+        sat_fat_g: nutrientPerServing(nutriments, "saturated-fat_100g", "saturated-fat_serving", servingGrams) ?? nutrientPer100g(nutriments, "saturated-fat_100g"),
+        fiber_g: nutrientPerServing(nutriments, "fiber_100g", "fiber_serving", servingGrams) ?? nutrientPer100g(nutriments, "fiber_100g")
+      }
+    : {
+        calories: nutrientPer100g(nutriments, "energy-kcal_100g") || toNumber(nutriments.energy_kcal),
+        protein_g: nutrientPer100g(nutriments, "proteins_100g"),
+        carbs_g: nutrientPer100g(nutriments, "carbohydrates_100g"),
+        fat_g: nutrientPer100g(nutriments, "fat_100g"),
+        sugar_g: nutrientPer100g(nutriments, "sugars_100g"),
+        sodium_mg: nutrientPer100g(nutriments, "sodium_100g") * 1000,
+        sat_fat_g: nutrientPer100g(nutriments, "saturated-fat_100g"),
+        fiber_g: nutrientPer100g(nutriments, "fiber_100g")
+      };
 
   const context = {
     barcode: code,
@@ -40,17 +63,8 @@ export async function POST(request: Request) {
     ingredients_text: product.ingredients_text_en || product.ingredients_text || "",
     nova_group: product.nova_group || null,
     additives_count: Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n),
-    serving: servingLabel,
-    nutrients_per_serving: {
-      calories: nutrientPerServing(nutriments, "energy-kcal_100g", "energy-kcal_serving", servingGrams) || toNumber(nutriments.energy_kcal),
-      protein_g: nutrientPerServing(nutriments, "proteins_100g", "proteins_serving", servingGrams),
-      carbs_g: nutrientPerServing(nutriments, "carbohydrates_100g", "carbohydrates_serving", servingGrams),
-      fat_g: nutrientPerServing(nutriments, "fat_100g", "fat_serving", servingGrams),
-      sugar_g: nutrientPerServing(nutriments, "sugars_100g", "sugars_serving", servingGrams),
-      sodium_mg: nutrientPerServing(nutriments, "sodium_100g", "sodium_serving", servingGrams) * 1000,
-      sat_fat_g: nutrientPerServing(nutriments, "saturated-fat_100g", "saturated-fat_serving", servingGrams),
-      fiber_g: nutrientPerServing(nutriments, "fiber_100g", "fiber_serving", servingGrams)
-    }
+    nutrition_basis: basis,
+    nutrients
   };
 
   const requestedModel = process.env.OPENROUTER_MODEL;

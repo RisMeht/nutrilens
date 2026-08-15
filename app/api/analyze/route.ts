@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
+import { gradeForScore } from "../../../lib/nutrition";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const system = `You are NutriLens, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
-{"name":"string","category":"string","score":number,"grade":"A|B|C|D|E","summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"highlights":["string","string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+{"name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"highlights":["string","string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
 Rules:
-- Use conservative nutrition estimates from visible evidence only.
+- Use conservative nutrition estimates from visible evidence only, for a single realistic serving of what's shown.
 - If serving size is uncertain, state uncertainty in summary and caution.
 - Never invent ingredient lists, medical claims, or disease advice.
-- Score should reflect likely nutrition quality and processing level.
+- Score is 0-100, where higher means a more nutritious everyday choice. Weigh protein, fiber and whole-food ingredients positively; weigh added sugar, sodium, saturated fat and degree of processing negatively. Roughly: 80-100 whole/minimally processed and nutrient-dense, 65-79 solid everyday choice, 45-64 mixed/moderately processed, 25-44 noticeably unbalanced, 0-24 heavily processed or nutrient-poor.
+- Do not include a "grade" field — it is computed from the score.
 - Alternatives must be realistic healthier swaps for the same food type.`;
 
 export async function POST(request: Request) {
@@ -61,7 +63,9 @@ export async function POST(request: Request) {
     const content = data.choices?.[0]?.message?.content;
     const parsed = JSON.parse(content ?? "{}");
     const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
-    return NextResponse.json({ ...parsed, alternatives });
+    const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : 0;
+    // Grade is derived from the score rather than trusted from the model, so the two can never disagree.
+    return NextResponse.json({ ...parsed, score, grade: gradeForScore(score), alternatives });
   } catch {
     return NextResponse.json({ error: "The AI returned an unreadable result. Please try again." }, { status: 502 });
   }

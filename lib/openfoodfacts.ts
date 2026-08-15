@@ -44,18 +44,18 @@ export const findBetterSwaps = async ({
   productName,
   productCode,
   categories,
-  sugarPerServing,
-  sodiumMgPerServing,
-  satFatPerServing,
-  energyPerServing
+  sugarPer100g,
+  sodiumMgPer100g,
+  satFatPer100g,
+  energyPer100g
 }: {
   productName: string;
   productCode: string;
   categories: unknown;
-  sugarPerServing: number;
-  sodiumMgPerServing: number;
-  satFatPerServing: number;
-  energyPerServing: number;
+  sugarPer100g: number;
+  sodiumMgPer100g: number;
+  satFatPer100g: number;
+  energyPer100g: number;
 }) => {
   const searchUrl = new URL(`${OFF_BASE}/cgi/search.pl`);
   searchUrl.searchParams.set("search_terms", productName || "food");
@@ -68,26 +68,29 @@ export const findBetterSwaps = async ({
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
   if (!response?.ok) return [] as Array<{ name: string; image: string }>;
   const data = await response.json();
-  const products = Array.isArray(data?.products) ? data.products : [];
+  const products: Record<string, unknown>[] = Array.isArray(data?.products) ? data.products : [];
 
   return products
-    .map((item: Record<string, unknown>) => {
+    .map((item) => {
       const code = typeof item.code === "string" ? item.code : "";
       if (!code || code === productCode) return null;
       const nutriments = (item.nutriments || {}) as Record<string, unknown>;
-      const sugar = toNumber(nutriments.sugars_serving ?? nutriments.sugars_100g);
-      const sodiumMg = toNumber(nutriments.sodium_serving ?? nutriments.sodium_100g) * 1000;
-      const satFat = toNumber(nutriments["saturated-fat_serving"] ?? nutriments["saturated-fat_100g"]);
-      const energy = toNumber(nutriments["energy-kcal_serving"] ?? nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
+      // Compare on the same per-100g basis as the scanned product — mixing a
+      // per-serving reading for one side with a per-100g reading for the other
+      // produced nonsense "healthier" rankings.
+      const sugar = toNumber(nutriments.sugars_100g);
+      const sodiumMg = toNumber(nutriments.sodium_100g) * 1000;
+      const satFat = toNumber(nutriments["saturated-fat_100g"]);
+      const energy = toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
       const image = (typeof item.image_front_small_url === "string" && item.image_front_small_url) || (typeof item.image_front_url === "string" && item.image_front_url) || "";
       if (!image) return null;
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
       const improvement =
-        (sugarPerServing - sugar) * 2 +
-        (sodiumMgPerServing - sodiumMg) / 80 +
-        (satFatPerServing - satFat) * 2 +
-        (energyPerServing - energy) / 80 +
+        (sugarPer100g - sugar) * 2 +
+        (sodiumMgPer100g - sodiumMg) / 80 +
+        (satFatPer100g - satFat) * 2 +
+        (energyPer100g - energy) / 80 +
         (6 - nutriRank(item.nutriscore_grade)) +
         overlapScore;
 
@@ -126,8 +129,8 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       if (!response?.ok) return { name, image: "" };
       const data = await response.json();
-      const products = Array.isArray(data?.products) ? data.products : [];
-      const withImage = products.find((item: Record<string, unknown>) =>
+      const products: Record<string, unknown>[] = Array.isArray(data?.products) ? data.products : [];
+      const withImage = products.find((item) =>
         (typeof item.image_front_small_url === "string" && item.image_front_small_url) ||
         (typeof item.image_front_url === "string" && item.image_front_url)
       );
@@ -140,5 +143,8 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
     })
   );
 
-  return resolved.filter((entry) => entry.image);
+  // Keep every suggested alternative even when Open Food Facts has no product photo for it
+  // (common for generic/home foods, since OFF mostly covers packaged branded products) — the
+  // client falls back to a generated placeholder tile rather than the swap disappearing entirely.
+  return resolved;
 };
