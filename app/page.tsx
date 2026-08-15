@@ -3,7 +3,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType } from "@zxing/library";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, Sparkles, SwitchCamera, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, ImagePlus, Info, Leaf, LoaderCircle, ScanLine, Sparkles, SwitchCamera, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 type Alternative = { name: string; image?: string };
@@ -90,6 +90,7 @@ export default function Home() {
   const [cameraReady, setCameraReady] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
   const [torchOn, setTorchOn] = useState(false), [torchSupported, setTorchSupported] = useState(false);
+  const [homeLeaving, setHomeLeaving] = useState(false);
   const video = useRef<HTMLVideoElement>(null), stream = useRef<MediaStream | null>(null), imageInput = useRef<HTMLInputElement>(null);
   const stopCamera = useCallback(() => { stream.current?.getTracks().forEach(t => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCameraReady(false); setTorchSupported(false); setTorchOn(false); }, []);
   const toggleTorch = useCallback(async () => {
@@ -213,9 +214,12 @@ export default function Home() {
           if (result && !cancelled) { cancelled = true; barcodeResult(result.getText()); return; }
         } catch { /* no barcode in this frame yet — keep scanning */ }
       }
-      timeoutId = window.setTimeout(tick, 150);
+      timeoutId = window.setTimeout(tick, 200);
     };
-    tick();
+    // Waits out the mode-switch CSS transition before the decode loop starts competing for
+    // the main thread — starting it immediately was still enough to make the transition (which
+    // plays over roughly this same window) stutter, even at a downscaled resolution.
+    timeoutId = window.setTimeout(tick, 220);
     return () => { cancelled = true; window.clearTimeout(timeoutId); };
   }, [mode, cameraOn, cameraReady, barcodeResult]);
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -245,14 +249,14 @@ export default function Home() {
   const scanAgain = () => { setResult(null); setError(""); setCameraError(""); setEnriching(false); setCameraOn(true); };
   const grade = result?.grade?.toLowerCase() || "a";
   const displayNumber = (value: number | undefined, suffix = "") => Number.isFinite(value) ? `${value}${suffix}` : "—";
-  if (!entered) return <main className="home-screen"><header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><p><Sparkles size={13} /> SMART FOOD SCANNER</p><h1>Know your<br /><i>next bite.</i></h1><span>Food scores made simple.</span></div><div className="home-card"><div className="home-bowl">🥑<b>🥕</b><i>🍅</i></div><div><strong>Scan food</strong><span>Photo or barcode</span></div><em>01</em></div><SwipeEnter onComplete={() => { setEntered(true); setCameraOn(true); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><p><Sparkles size={13} /> SMART FOOD SCANNER</p><h1>Know your<br /><i>next bite.</i></h1><span>Food scores made simple.</span></div><div className="home-card"><div className="home-bowl">🥑<b>🥕</b><i>🍅</i></div><div><strong>Scan food</strong><span>Photo or barcode</span></div><em>01</em></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
     <header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
     <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && <div className="scan-beam" />}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" capture="environment" hidden onChange={e => file(e.target.files?.[0])} />
-  {loading && <div className="scan-loading-overlay"><div className="scan-loading-card"><div className="pulse-bars"><i /><i /><i /><i /><i /></div><h3>{mode === "food" ? "Scanning your photo" : "Looking up nutrition"}</h3><p>{mode === "food" ? "Identifying the food and estimating nutrition…" : "Matching this barcode to nutrition facts…"}</p></div></div>}
+  {loading && <div className="scan-progress">{mode === "food" ? <div className="pulse-bars"><i /><i /><i /><i /><i /></div> : <LoaderCircle className="spin scan-progress-icon" size={42} />}</div>}
   {!loading && (result || error) && <div className="result-sheet"><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-heading"><img className="result-photo" src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /><div className="result-title"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{enriching && <div className="ai-status"><LoaderCircle className="spin" size={16} /><span>Loading Gemini health insights…</span></div>}{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
 }
 
@@ -294,11 +298,10 @@ function SwipeEnter({ onComplete }: { onComplete: () => void }) {
   const progress = maxXRef.current > 0 ? dragX / maxXRef.current : 0;
 
   return <div className={`swipe-enter${completed ? " completed" : ""}`} ref={trackRef}>
-    <div className="swipe-enter-fill" style={{ width: `${dragX + THUMB + 8}px` }} />
     <span className="swipe-enter-label" style={{ opacity: Math.max(0, 1 - progress * 1.6) }}>Swipe to scan</span>
     {!completed && <span className="swipe-enter-hint"><ChevronRight size={16} /><ChevronRight size={16} /></span>}
     <div className="swipe-enter-thumb" style={{ transform: `translateX(${dragX}px)`, transition: dragging ? "none" : "transform .32s cubic-bezier(.2,.8,.2,1)" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={release} onPointerCancel={release}>
-      <Camera size={22} />
+      <ArrowRight size={24} />
     </div>
   </div>;
 }
