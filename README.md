@@ -3,7 +3,7 @@
 NutriLens is a mobile-first food scanner with two paths:
 
 - **Food photo:** sends a compressed user-selected image through a server route to OpenRouter for a structured nutrition estimate.
-- **Barcode:** uses the free Open Food Facts database, without spending AI credits.
+- **Barcode:** uses Open Food Facts product records with serving-based nutrient calculations and health scoring.
 
 ## Run it locally
 
@@ -28,4 +28,4 @@ If a provider is temporarily unavailable, change only `OPENROUTER_MODEL` in Verc
 
 ## Notes
 
-Nutrition from an image is an estimate, not a diagnosis or medical advice. Packaged-food results depend on the community-maintained Open Food Facts record, so users should still check the actual label for allergies and serving size.
+Nutrition from an image is an estimate, not a diagnosis or medical advice. Barcode nutrition and facts are calculated per serving from Open Food Facts fields when available (with per-100g fallback math), so users should still verify with the package label for final allergen and serving confirmation.
