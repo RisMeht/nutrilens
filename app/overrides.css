@@ -1,16 +1,29 @@
 /* Final responsive polish layer: desktop has breathing room; phone stays app-like. */
-.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:38%}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
+/* Locks the page itself to exactly one viewport: without this, mobile browsers allow the
+   whole page to rubber-band scroll/bounce past the app's own full-screen sections, briefly
+   revealing the plain body background above/below them (looked like a mismatched flat
+   header/footer bar) and made the screen feel like it could "move up and down". Each screen
+   manages its own internal scrolling (e.g. the results sheet) independently of this. */
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+.help,.gallery,.flip{-webkit-backdrop-filter:blur(7px)}
+.result-sheet{-webkit-backdrop-filter:blur(10px)}
+
+.home-header{justify-content:flex-end}
+.home-logo{width:52px;height:52px;border-radius:16px;display:block;margin:0 auto 18px}
+.home-copy{left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;top:36%}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
 .home-card{top:64%;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center}
+.home-card:before{display:none}
 .home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
-.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .28s ease both}.top-copy p,.top-copy span{display:none}.focus-frame{top:47%;transition:width .24s cubic-bezier(.25,.8,.3,1),height .24s cubic-bezier(.25,.8,.3,1)}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .focus-frame,.mode-food .focus-frame{animation:frame-in .22s ease both}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes frame-in{from{opacity:.4}to{opacity:1}}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
+.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}.focus-frame{top:47%;transition:width .42s cubic-bezier(.22,.7,.2,1),height .42s cubic-bezier(.22,.7,.2,1)}.camera-shade{background:linear-gradient(#06150d60 0 16%,transparent 35% 70%,#06150d72 100%)}.mode-barcode .focus-frame,.mode-food .focus-frame{animation:frame-in .38s ease both}.mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes frame-in{from{opacity:.4}to{opacity:1}}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 .mode-switch button{transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
-.shutter span{animation:text-fade .22s ease both}
+.shutter span{animation:text-fade .3s ease both}
 /* A camera that's just been granted permission eases in with a little settle rather than a flat cut-to-visible. */
 .camera-feed{transform:scale(1.04);transition:opacity .5s ease,transform .7s cubic-bezier(.2,.8,.2,1)}.camera-active .camera-feed{transform:scale(1)}
-@media(max-width:600px){.home-copy{top:34%}.home-card{top:60%}.top-copy{top:11%}.focus-frame{top:46%}}
+@media(max-width:600px){.home-copy{top:32%}.home-card{top:60%}.top-copy{top:11%}.focus-frame{top:46%}}
 
-.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:78px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:68px}}
+.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:110px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:92px}}
 
 /* Closing animations — both the help dialog and the results sheet used to unmount instantly
    with no exit transition ("flash closed"). A brief local "closing" state now plays a real
@@ -22,21 +35,25 @@
 @keyframes fade-out{to{opacity:0}}
 @keyframes sheet-out{to{opacity:0;transform:translateY(16px) scale(.97)}}
 
-/* Minimal loading indicator for barcode lookups — no card, no backdrop, just the spinner
-   floating over the still-live camera view (a drop-shadow keeps it legible against any
-   background) so "in progress" never reads as a blocking pop-up. Food-mode "loading" instead
-   reuses the scan-beam inside the focus frame (see the beam rules below) for one consistent
-   scanning visual language. */
-.scan-progress{position:fixed;inset:0;z-index:6;display:grid;place-items:center;pointer-events:none;animation:fade-in .15s ease}
+/* Minimal loading indicator for barcode lookups — no card, no backdrop, just a spinner
+   centered on the focus frame itself (rather than the whole viewport, which reads as
+   off-center relative to the header/footer chrome). A drop-shadow keeps it legible against
+   any background. Food-mode "loading" instead reuses the scan-beam inside the focus frame
+   (see the beam rules below) for one consistent scanning visual language. */
+.scan-progress{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;animation:fade-in .15s ease}
 .scan-progress-icon{color:#baff59;filter:drop-shadow(0 3px 10px #06150dcc)}
 .scan-beam{transition:opacity .25s ease}
 
 /* Result header: a full-width photo banner with the score ring badged over its bottom-right
    corner, title block below. Replaces a small inline thumbnail that left a large empty gap
-   next to the text and gave long names nowhere to wrap without crowding the photo. */
-.result-photo-banner{position:relative;margin:0 -30px;height:180px;overflow:hidden;border-radius:28px 28px 0 0;background:#e6efe2}
+   next to the text and gave long names nowhere to wrap without crowding the photo. The score
+   ring is a sibling of the banner (not nested inside it) specifically so the banner's own
+   overflow:hidden — needed to clip/round the photo — doesn't also clip the badge where it
+   deliberately overlaps below the photo's edge. */
+.result-photo-wrap{position:relative;margin:0 -30px}
+.result-photo-banner{height:180px;overflow:hidden;border-radius:28px 28px 0 0;background:#e6efe2}
 .result-photo-banner img{width:100%;height:100%;object-fit:cover;display:block}
-.result-photo-banner .score-ring{position:absolute;right:18px;bottom:-28px;box-shadow:0 10px 24px #0007}
+.result-photo-wrap .score-ring{position:absolute;right:18px;bottom:-28px;box-shadow:0 10px 24px #0007}
 .result-title-block{padding-top:40px}
 .result-title-block p{font:11px "DM Mono";letter-spacing:.1em;color:#528244;margin:0}
 .result-title-block h2{font-size:clamp(24px,4.5vw,34px);line-height:1.12;letter-spacing:-.04em;margin:9px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
@@ -49,11 +66,11 @@
 @keyframes rise-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .nutrition-row{grid-template-columns:repeat(4,minmax(74px,1fr))}.alternatives-grid img{background:#e6efe2}
 @media(max-width:720px){.nutrition-row{grid-template-columns:repeat(2,minmax(100px,1fr))}}
-@media(max-width:600px){.result-photo-banner{margin:0 -20px;height:150px}}
+@media(max-width:600px){.result-photo-wrap{margin:0 -20px}.result-photo-banner{height:150px}}
 
 /* Header flash/torch toggle. */
 .header-actions{display:flex;align-items:center;gap:10px}
-.torch{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);transition:background .18s ease,color .18s ease}
+.torch{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:background .18s ease,color .18s ease}
 .torch.on{background:#baff59;color:#153d1f}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes

@@ -114,7 +114,7 @@ export const findBetterSwaps = async ({
 // barcode product photo, but Wikimedia Commons likely has a real one. Deliberately not using
 // real-time AI image generation here: that has a per-image cost and adds latency to every
 // scan, a tradeoff worth confirming with the user first rather than wiring up silently.
-const wikimediaImageFor = async (query: string): Promise<string> => {
+export const wikimediaImageFor = async (query: string): Promise<string> => {
   const url = new URL("https://commons.wikimedia.org/w/api.php");
   url.searchParams.set("action", "query");
   url.searchParams.set("generator", "search");
@@ -123,7 +123,7 @@ const wikimediaImageFor = async (query: string): Promise<string> => {
   url.searchParams.set("gsrlimit", "3");
   url.searchParams.set("prop", "imageinfo");
   url.searchParams.set("iiprop", "url|mime");
-  url.searchParams.set("iiurlwidth", "400");
+  url.searchParams.set("iiurlwidth", "640");
   url.searchParams.set("format", "json");
 
   const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 6000).catch(() => null);

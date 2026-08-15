@@ -249,14 +249,14 @@ export default function Home() {
   };
   const grade = result?.grade?.toLowerCase() || "a";
   const displayNumber = (value: number | undefined, suffix = "") => Number.isFinite(value) ? `${value}${suffix}` : "—";
-  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><h1>NutriLens</h1><span>Know what’s healthy, instantly.</span></div><div className="home-card"><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header className="home-header"><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-copy"><img className="home-logo" src="/icon" alt="" /><h1>NutriLens</h1><span>Know what’s healthy, instantly.</span></div><div className="home-card"><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
-    <header><div className="wordmark"><span><Leaf size={17} fill="currentColor" /></span>NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></div></header>
+    <header><div className="wordmark"><img className="wordmark-icon" src="/icon" alt="" />NutriLens</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
-    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{((mode === "barcode" && !loading) || (mode === "food" && loading)) && <div className="scan-beam" />}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}{loading && mode === "barcode" && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={42} /></div>}
+    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{((mode === "barcode" && !loading) || (mode === "food" && loading)) && <div className="scan-beam" />}{loading && mode === "barcode" && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch"><button className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
-  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={scanAgain}><X size={20} /></button>{error && !result && <div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAgain}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-wrap"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span></div>)}</div>{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <article key={`${item.name}-${i}`}><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} /><span>{item.name}</span></article>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAgain}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
 }
 
 // A real drag-to-confirm slider (not just a button styled to look like one): the thumb
@@ -268,38 +268,57 @@ function SwipeEnter({ onComplete }: { onComplete: () => void }) {
   const [completed, setCompleted] = useState(false);
   const maxXRef = useRef(0);
   const startXRef = useRef(0);
+  // Mirrors dragX/dragging outside React state: pointerdown->pointerup can fire faster than a
+  // render flushes (a fast, deliberate swipe — or certain automated taps — can do this), and
+  // reading the state variables directly inside release() would then see stale pre-drag
+  // values, discarding a real completed swipe. The refs are always current regardless of
+  // render timing; the state is kept only to drive the visible transform/opacity.
+  const dragXRef = useRef(0);
+  const draggingRef = useRef(false);
   const THUMB = 58;
 
+  // Pressing anywhere on the track (not just the small thumb) starts the drag — the thumb
+  // jumps to meet the finger immediately, then tracks it from there.
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (completed) return;
     const track = trackRef.current;
     if (!track) return;
     maxXRef.current = Math.max(0, track.clientWidth - THUMB - 8);
-    startXRef.current = e.clientX - dragX;
+    const pressX = e.clientX - track.getBoundingClientRect().left - THUMB / 2;
+    const clamped = Math.min(maxXRef.current, Math.max(0, pressX));
+    dragXRef.current = clamped;
+    setDragX(clamped);
+    startXRef.current = e.clientX - clamped;
+    draggingRef.current = true;
     setDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    setDragX(Math.min(maxXRef.current, Math.max(0, e.clientX - startXRef.current)));
+    if (!draggingRef.current) return;
+    const next = Math.min(maxXRef.current, Math.max(0, e.clientX - startXRef.current));
+    dragXRef.current = next;
+    setDragX(next);
   };
   const release = () => {
-    if (!dragging) return;
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
     setDragging(false);
-    if (maxXRef.current > 0 && dragX >= maxXRef.current * 0.7) {
+    if (maxXRef.current > 0 && dragXRef.current >= maxXRef.current * 0.7) {
       setCompleted(true);
+      dragXRef.current = maxXRef.current;
       setDragX(maxXRef.current);
       onComplete(); // fires the screen transition immediately — it plays alongside the thumb's own snap animation rather than waiting for it to finish first
     } else {
+      dragXRef.current = 0;
       setDragX(0);
     }
   };
   const progress = maxXRef.current > 0 ? dragX / maxXRef.current : 0;
 
-  return <div className={`swipe-enter${completed ? " completed" : ""}`} ref={trackRef}>
+  return <div className={`swipe-enter${completed ? " completed" : ""}`} ref={trackRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={release} onPointerCancel={release}>
     <span className="swipe-enter-label" style={{ opacity: Math.max(0, 1 - progress * 1.6) }}>Swipe to scan</span>
     {!completed && <span className="swipe-enter-hint"><ChevronRight size={16} /><ChevronRight size={16} /></span>}
-    <div className="swipe-enter-thumb" style={{ transform: `translateX(${dragX}px)`, transition: dragging ? "none" : "transform .32s cubic-bezier(.2,.8,.2,1)" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={release} onPointerCancel={release}>
+    <div className="swipe-enter-thumb" style={{ transform: `translateX(${dragX}px)`, transition: dragging ? "none" : "transform .32s cubic-bezier(.2,.8,.2,1)" }}>
       <ArrowRight size={24} />
     </div>
   </div>;

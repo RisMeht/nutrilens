@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl } from "../../../lib/openfoodfacts";
+import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl, wikimediaImageFor } from "../../../lib/openfoodfacts";
 import { buildHealthScore, nutrientPer100g, parseServing, toNumber } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
@@ -128,6 +128,11 @@ export async function GET(request: Request) {
   const quantity = /\d\s*(g|kg|mg|ml|cl|l|oz|lbs?|pcs?|x)\b/i.test(quantityText) ? quantityText : "";
   const meta = [brand, quantity].filter(Boolean).join(" · ");
 
+  // Most products have their own Open Food Facts photo; for the rare one that doesn't,
+  // fall back to a real Wikimedia Commons photo (searched by brand + name) rather than
+  // going straight to the generated placeholder.
+  const image = productImageUrl(product) || (await wikimediaImageFor(`${brand} ${productName}`.trim()).catch(() => ""));
+
   return NextResponse.json({
     name: productName,
     category: "BARCODE",
@@ -135,7 +140,7 @@ export async function GET(request: Request) {
     score,
     summary: hasServing ? `Nutrition per serving (${basisLabel}).` : "This product's label doesn't list a serving size, so nutrition is shown per 100g.",
     meta,
-    image: productImageUrl(product),
+    image,
     calories: Math.round(display.energy),
     protein: Number(display.protein.toFixed(1)),
     carbs: Number(display.carbs.toFixed(1)),
