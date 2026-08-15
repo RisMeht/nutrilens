@@ -1,61 +1,14 @@
 import { NextResponse } from "next/server";
-
-const toNumber = (value: unknown) => {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const gradeForScore = (score: number) => (score >= 80 ? "A" : score >= 65 ? "B" : score >= 45 ? "C" : score >= 25 ? "D" : "E");
-
-const buildHealthScore = (nutriments: Record<string, unknown>, additivesCount: number, ingredientCount: number) => {
-  const sugar = toNumber(nutriments.sugars_100g);
-  const satFat = toNumber(nutriments["saturated-fat_100g"]);
-  const fiber = toNumber(nutriments.fiber_100g);
-  const protein = toNumber(nutriments.proteins_100g);
-  const energy = toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
-  const sodiumMg = toNumber(nutriments.sodium_100g) * 1000;
-  const fruitVegPct = toNumber(
-    nutriments["fruits-vegetables-nuts-estimate-from-ingredients_100g"] ??
-    nutriments["fruits-vegetables-nuts_100g"] ??
-    nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
-  );
-
-  const sugarPenalty = clamp((sugar - 4) * 1.9, 0, 25);
-  const satFatPenalty = clamp((satFat - 1) * 4.2, 0, 20);
-  const sodiumPenalty = clamp((sodiumMg - 120) / 23, 0, 24);
-  const energyPenalty = clamp((energy - 140) / 15, 0, 14);
-  const additivesPenalty = clamp(additivesCount * 2, 0, 10);
-  const complexityPenalty = clamp((ingredientCount - 12) * 0.8, 0, 8);
-  const fiberBonus = clamp(fiber * 2.2, 0, 12);
-  const proteinBonus = clamp((protein - 2) * 1.2, 0, 9);
-  const fruitVegBonus = clamp(fruitVegPct / 7.5, 0, 12);
-
-  const score = Math.round(
-    clamp(
-      68 - sugarPenalty - satFatPenalty - sodiumPenalty - energyPenalty - additivesPenalty - complexityPenalty + fiberBonus + proteinBonus + fruitVegBonus,
-      0,
-      100
-    )
-  );
-
-  return { score, grade: gradeForScore(score), sugar, satFat, fiber, protein, energy, sodiumMg };
-};
+import { fetchOpenFoodFactsProduct, findBetterSwaps } from "../../../lib/openfoodfacts";
+import { buildHealthScore, nutrientPerServing, parseServing, toNumber } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
   const rawCode = new URL(request.url).searchParams.get("code") || "";
   if (!/^\d{8,14}$/.test(rawCode)) return NextResponse.json({ error: "Enter a valid barcode." }, { status: 400 });
   const code = rawCode;
-  const lookupUrl = new URL("https://world.openfoodfacts.org/api/v2/product/00000000.json");
-  lookupUrl.pathname = `/api/v2/product/${code}.json`;
 
-  const response = await fetch(lookupUrl, {
-    headers: { "User-Agent": "NutriLens/1.0 (nutrition scanner)" },
-    next: { revalidate: 86400 }
-  });
-  const data = await response.json();
-
-  if (!data.product) {
+  const product = await fetchOpenFoodFactsProduct(code);
+  if (!product) {
     return NextResponse.json({
       name: "Barcode detected",
       category: "BARCODE",
@@ -67,7 +20,7 @@ export async function GET(request: Request) {
       carbs: 0,
       fat: 0,
       highlights: ["Barcode camera scan worked", "No packaged-food record found", "Try Food mode for AI photo analysis"],
-      concerns: ["This barcode may belong to inventory equipment or a non-food item."],
+      concerns: ["This barcode may belong to a non-food item or a product missing from public records."],
       alternatives: [],
       caution: "No Open Food Facts entry was found for this barcode.",
       facts: [{ label: "Barcode", value: code }],
@@ -75,55 +28,100 @@ export async function GET(request: Request) {
     });
   }
 
-  const product = data.product;
   const nutriments = (product.nutriments || {}) as Record<string, unknown>;
   const ingredientsText = (product.ingredients_text_en || product.ingredients_text || "").toString().trim();
   const ingredients = ingredientsText
     .split(/[,;]+/)
     .map((item: string) => item.trim())
     .filter(Boolean);
-  const additivesCount = Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n);
-  const { score, grade, sugar, satFat, fiber, protein, energy, sodiumMg } = buildHealthScore(nutriments, additivesCount, ingredients.length);
-  const calories = Math.round(energy);
-  const carbs = Math.round(toNumber(nutriments.carbohydrates_100g));
-  const fat = Math.round(toNumber(nutriments.fat_100g));
-  const concerns: string[] = [];
 
-  if (sugar >= 10) concerns.push(`High sugar: ${sugar.toFixed(1)}g per 100g.`);
-  if (sodiumMg >= 400) concerns.push(`High sodium: ${Math.round(sodiumMg)}mg per 100g.`);
-  if (satFat >= 5) concerns.push(`High saturated fat: ${satFat.toFixed(1)}g per 100g.`);
+  const serving = parseServing(product.serving_size);
+  const servingLabel = serving.label === "Not listed" ? "1 serving (from label)" : serving.label;
+  const servingGrams = serving.grams;
+
+  const energyPerServing = nutrientPerServing(nutriments, "energy-kcal_100g", "energy-kcal_serving", servingGrams) || toNumber(nutriments.energy_kcal);
+  const proteinPerServing = nutrientPerServing(nutriments, "proteins_100g", "proteins_serving", servingGrams);
+  const carbsPerServing = nutrientPerServing(nutriments, "carbohydrates_100g", "carbohydrates_serving", servingGrams);
+  const fatPerServing = nutrientPerServing(nutriments, "fat_100g", "fat_serving", servingGrams);
+  const sugarPerServing = nutrientPerServing(nutriments, "sugars_100g", "sugars_serving", servingGrams);
+  const satFatPerServing = nutrientPerServing(nutriments, "saturated-fat_100g", "saturated-fat_serving", servingGrams);
+  const fiberPerServing = nutrientPerServing(nutriments, "fiber_100g", "fiber_serving", servingGrams);
+  const sodiumGPerServing = nutrientPerServing(nutriments, "sodium_100g", "sodium_serving", servingGrams);
+  const sodiumMgPerServing = sodiumGPerServing * 1000;
+
+  const additivesCount = Array.isArray(product.additives_tags) ? product.additives_tags.length : toNumber(product.additives_n);
+  const novaGroup = toNumber(product.nova_group);
+  const fruitVegPct = toNumber(
+    nutriments["fruits-vegetables-nuts-estimate-from-ingredients_100g"] ??
+      nutriments["fruits-vegetables-nuts_100g"] ??
+      nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
+  );
+
+  const { score, grade } = buildHealthScore({
+    sugarPerServing,
+    sodiumMgPerServing,
+    satFatPerServing,
+    fiberPerServing,
+    proteinPerServing,
+    energyPerServing,
+    additivesCount,
+    ingredientCount: ingredients.length,
+    novaGroup,
+    fruitVegPct
+  });
+
+  const concerns: string[] = [];
+  if (sugarPerServing >= 12) concerns.push(`High sugar for one serving: ${sugarPerServing.toFixed(1)}g.`);
+  if (sodiumMgPerServing >= 500) concerns.push(`High sodium for one serving: ${Math.round(sodiumMgPerServing)}mg.`);
+  if (satFatPerServing >= 5) concerns.push(`High saturated fat for one serving: ${satFatPerServing.toFixed(1)}g.`);
   if (additivesCount >= 3) concerns.push(`${additivesCount} additives listed.`);
   if (!ingredientsText) concerns.push("Ingredient list is incomplete in the source database.");
 
+  const productName =
+    (typeof product.product_name === "string" && product.product_name.trim()) ||
+    (typeof product.product_name_en === "string" && product.product_name_en.trim()) ||
+    "Scanned product";
+
+  const alternatives = await findBetterSwaps({
+    productName,
+    productCode: code,
+    categories: product.categories_tags,
+    sugarPerServing,
+    sodiumMgPerServing,
+    satFatPerServing,
+    energyPerServing
+  });
+
   const facts = [
-    { label: "Sugar", value: `${sugar ? sugar.toFixed(1) : "0"}g / 100g` },
-    { label: "Sodium", value: `${Math.round(sodiumMg)}mg / 100g` },
-    { label: "Sat fat", value: `${satFat ? satFat.toFixed(1) : "0"}g / 100g` },
-    { label: "Fiber", value: `${fiber ? fiber.toFixed(1) : "0"}g / 100g` },
+    { label: "Serving", value: servingLabel },
+    { label: "Sugar", value: `${sugarPerServing ? sugarPerServing.toFixed(1) : "0"}g / serving` },
+    { label: "Sodium", value: `${Math.round(sodiumMgPerServing)}mg / serving` },
+    { label: "Sat fat", value: `${satFatPerServing ? satFatPerServing.toFixed(1) : "0"}g / serving` },
+    { label: "Fiber", value: `${fiberPerServing ? fiberPerServing.toFixed(1) : "0"}g / serving` },
     { label: "Additives", value: `${additivesCount || 0}` },
     { label: "Ingredients", value: `${ingredients.length || 0}` }
   ];
 
   return NextResponse.json({
-    name: product.product_name || product.product_name_en || "Scanned product",
+    name: productName,
     category: "BARCODE",
     grade,
     score,
-    summary: product.generic_name || "Instant label summary from Open Food Facts. Gemini insights are loading next.",
-    calories,
-    protein: Math.round(protein),
-    carbs,
-    fat,
+    summary: `Nutrition is calculated for ${servingLabel} using reliable label data from Open Food Facts.`,
+    calories: Math.round(energyPerServing),
+    protein: Number(proteinPerServing.toFixed(1)),
+    carbs: Number(carbsPerServing.toFixed(1)),
+    fat: Number(fatPerServing.toFixed(1)),
     highlights: [
       product.brands ? `Brand: ${product.brands}` : "Brand not listed",
       product.quantity ? `Pack size: ${product.quantity}` : "Pack size missing",
-      product.nova_group ? `NOVA group ${product.nova_group}` : "Processing level unavailable"
+      servingLabel !== "1 serving (from label)" ? `Serving: ${servingLabel}` : "Serving size not explicitly listed"
     ],
     concerns,
-    alternatives: [],
+    alternatives,
     caution: ingredientsText
-      ? "Check the on-pack allergen statement and serving size before eating."
-      : "Some product details are missing in the community database.",
+      ? "Always check the package label for allergy and ingredient updates before consuming."
+      : "Some details are missing in the source database. Verify with the product label.",
     facts,
     code
   });

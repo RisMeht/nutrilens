@@ -4,7 +4,7 @@ import "./overrides.css";
 
 export const metadata: Metadata = {
   title: "NutriLens — Know your food",
-  description: "A thoughtful food scanner for smarter everyday choices."
+  description: "Scan food photos or barcodes and get serving-based nutrition insights from trusted product data."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
