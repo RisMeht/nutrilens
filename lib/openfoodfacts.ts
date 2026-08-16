@@ -10,7 +10,7 @@ import { buildHealthScore, toNumber } from "./nutrition";
 const hasCoreNutriments = (nutriments: Record<string, unknown>): boolean =>
   ["energy-kcal_100g", "energy_kcal", "sugars_100g", "fat_100g", "proteins_100g"].some((key) => nutriments[key] !== undefined && nutriments[key] !== null);
 
-const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): string => {
+export const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): string => {
   if (!hasCoreNutriments(nutriments)) return "?";
   const sodiumMg = toNumber(nutriments.sodium_100g) * 1000 || (toNumber(nutriments.salt_100g) / 2.5) * 1000;
   const fruitVegPct = toNumber(

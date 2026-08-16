@@ -163,13 +163,11 @@ export const nutrientRange = (key: RangeKey, value: number, scale = 1): Nutrient
   return { bucket, positionPct, good, bad, highIsGood: goodDirection === "high" };
 };
 
-// Yuka publishes its scoring as three weighted parts — nutritional quality (Nutri-Score
-// based, 60%), additive risk (30%, any single high-risk additive caps the whole product at
-// 49/100), and an organic bonus (10%) — without publishing the exact per-additive numbers
-// behind it (that database is proprietary). This mirrors the published SHAPE of that method
-// using our own Nutri-Score math for the nutrition third and the model's own food-safety
-// reasoning (grounded in the same EFSA/IARC-style evidence Yuka cites) for the additive third,
-// rather than reproducing anything of Yuka's own.
+// Additive risk (color-flagged per ingredient, via the model's own food-safety reasoning
+// grounded in EFSA/IARC-style evidence) and organic status are shown as their own breakdown
+// rows, informational rather than blended into the top-level score/grade — that number is
+// always the deterministic nutrition-only formula above, computable from data a list view
+// already has, so it can never disagree with what the same product showed before it was opened.
 export type AdditiveRisk = "green" | "yellow" | "orange" | "red";
 export type AdditiveFlag = { name: string; risk: AdditiveRisk; note: string; detail?: string };
 
@@ -178,7 +176,6 @@ export const additivesScoreFromFlags = (flags: AdditiveFlag[]) => {
   const penalty = flags.reduce((sum, f) => sum + (f.risk === "red" ? 40 : f.risk === "orange" ? 15 : f.risk === "yellow" ? 4 : 0), 0);
   return clamp(100 - penalty, 0, 100);
 };
-export const hasHighRiskAdditive = (flags: AdditiveFlag[]) => flags.some((f) => f.risk === "red");
 
 export type ScoreBreakdown = {
   nutrition: { score: number };

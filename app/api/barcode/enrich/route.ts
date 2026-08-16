@@ -3,12 +3,9 @@ import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../.
 import {
   additivesScoreFromFlags,
   buildHealthScore,
-  gradeForScore,
-  hasHighRiskAdditive,
   nutrientPer100g,
   parseServing,
   toNumber,
-  SCORING_RUBRIC,
   type AdditiveFlag,
   type AdditiveRisk,
   type ScoreBreakdown
@@ -20,11 +17,10 @@ export const maxDuration = 30;
 
 const system = `You are Nura AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
-{"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","score":number,"nutritionScore":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}
-Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific product, then let the score follow from that.
+{"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}
+The 0-100 score and letter grade are computed deterministically from nutrients_per_100g elsewhere — do not include them here; focus entirely on the qualitative read (summary/highlights/concerns/alternatives) and on actually reading ingredients_text for additives.
 Rules:
-- ${SCORING_RUBRIC} Base the score on nutrients_per_100g (the standard, comparable nutrition-density basis) so it isn't skewed by serving size. A high-protein, low-sugar, high-fiber bar or shake should score well even if it's "processed", the same way a nutritionist wouldn't dismiss it just for coming in a wrapper.
-- "nutritionScore" is the same 0-100 scale but judges ONLY the raw nutrient profile (energy, sugar, saturated fat, sodium, fiber, protein density) — ignore ingredients/additives/processing for this number specifically. Judge it the way the official Nutri-Score system would: sugary drinks and sodas are judged strictly by their sugar and calorie density and should score LOW here (mid-30s or worse) even though a single can/bottle is "just one serving" — don't let a modest per-serving gram amount read as harmless the way it might for a solid food.
+- Reason like an experienced nutritionist: weigh protein, fiber, whole-food ingredients and micronutrient density positively; weigh added sugar, sodium, saturated fat and unnecessary ultra-processing negatively. Let that judgment shape the summary/highlights/concerns, not a number — the score is computed separately.
 - When highlights/concerns cite a specific amount, cite the nutrients_per_serving numbers (that's what's shown on screen) using the given serving label — never cite the per-100g numbers directly, and never invent a serving size other than the one given.
 - Use only the provided nutrition and ingredient facts. Do not invent nutrients or medical claims.
 - Keep highlights/concerns short and concrete, max 3 each. Only include a concern that's genuinely notable — don't pad the list.
@@ -76,19 +72,20 @@ export async function POST(request: Request) {
     nutrients_per_serving
   };
 
-  // Fallback-only figure for the "Nutritional quality" third of the breakdown, used just in
-  // case the model's own nutritionScore below is missing/invalid. Not used as the primary
-  // source: buildHealthScore's threshold table is tuned for solid foods, so on its own it
-  // reads sugary drinks as far healthier than they are (Nutri-Score's real methodology uses a
-  // separate, stricter table for beverages that isn't replicated here) — the model, prompted
-  // to judge nutrient density the way Nutri-Score actually treats beverages, does this better.
+  // The score and grade shown ANYWHERE in the app (this result, the Search/Top grids, Better
+  // Swaps) are always this same deterministic function of nutrients_per_100g — never something
+  // the AI independently judges. That used to be an AI-provided "holistic" score that could
+  // (and did) land on a different letter than the one already shown before the product was
+  // opened, which read as a bug ("why did this say B in the list and D here?") rather than a
+  // feature — a list can't run the AI on every tile to keep up, so the only way to guarantee
+  // agreement is to never let the AI move the number in the first place.
   const novaGroup = toNumber(product.nova_group);
   const fruitVegPct = toNumber(
     nutriments["fruits-vegetables-nuts-estimate-from-ingredients_100g"] ??
       nutriments["fruits-vegetables-nuts_100g"] ??
       nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
   );
-  const { score: nutritionScoreFallback } = buildHealthScore({
+  const { score: nutritionScore } = buildHealthScore({
     sugarPer100g: nutrients_per_100g.sugar_g,
     sodiumMgPer100g: nutrients_per_100g.sodium_mg,
     satFatPer100g: nutrients_per_100g.sat_fat_g,
@@ -146,19 +143,6 @@ export async function POST(request: Request) {
           .slice(0, 6)
       : [];
 
-    let score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : null;
-    // Enforced server-side (not left to the model) so it's never inconsistent: Yuka's
-    // published rule is that a single high-risk additive caps the whole product at 49/100,
-    // and organic products get a small bonus — same 60/30/10 shape as the breakdown below.
-    if (score !== null) {
-      if (isOrganic) score = Math.min(100, score + 6);
-      if (hasHighRiskAdditive(additives)) score = Math.min(score, 49);
-    }
-
-    const nutritionScore =
-      typeof parsed.nutritionScore === "number" && Number.isFinite(parsed.nutritionScore)
-        ? Math.max(0, Math.min(100, Math.round(parsed.nutritionScore)))
-        : nutritionScoreFallback;
     const breakdown: ScoreBreakdown = {
       nutrition: { score: nutritionScore },
       additives: { score: additivesScoreFromFlags(additives), items: additives, applicable: ingredientsText.length > 0 },
@@ -166,8 +150,6 @@ export async function POST(request: Request) {
     };
 
     return NextResponse.json({
-      score,
-      grade: score === null ? null : gradeForScore(score),
       summary: typeof parsed.summary === "string" ? parsed.summary : "AI insights are based on nutrition and ingredient quality.",
       highlights: Array.isArray(parsed.highlights) ? parsed.highlights.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
       concerns: Array.isArray(parsed.concerns) ? parsed.concerns.filter((item: unknown) => typeof item === "string").slice(0, 3) : [],
