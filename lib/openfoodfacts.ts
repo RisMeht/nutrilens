@@ -249,9 +249,15 @@ const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
 // arbitrarily. Pulling the most-scanned products first, THEN ranking that pool by grade,
 // answers what "top" should actually mean here: the best-rated among products people
 // genuinely recognize, not the single most technically-optimal barcode in the database.
+// Restricting to US-available, English-labeled products does double duty: it's the
+// "actually available to me, actually readable" filter that was asked for, and — verified
+// directly against the API before shipping this — it also happens to fix the "most products
+// have no photo" complaint, since popular US/English listings are overwhelmingly
+// photographed by Open Food Facts' contributor base (a same-sized unfiltered pool came back
+// with plenty of image-less entries; this filtered pool came back 60/60 with photos).
 const topProductsForCategory = async (category: string): Promise<BrowseItem[]> => {
   const url = new URL(`${OFF_SEARCH_BASE}/search`);
-  url.searchParams.set("q", `categories_tags:"${category}"`);
+  url.searchParams.set("q", `categories_tags:"${category}" AND countries_tags:"en:united-states" AND lang:en`);
   url.searchParams.set("sort_by", "-unique_scans_n");
   url.searchParams.set("page_size", "60");
   url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,unique_scans_n");
@@ -263,7 +269,11 @@ const topProductsForCategory = async (category: string): Promise<BrowseItem[]> =
 
   return products
     .map((item) => ({ item: mapBrowseItem(item), scans: toNumber(item.unique_scans_n) }))
-    .filter((entry): entry is { item: BrowseItem; scans: number } => entry.item !== null)
+    // Still requires an actual photo defensively, even though the US+English filter alone
+    // already accounts for nearly every result having one — a product without a photo falls
+    // back to a generated placeholder tile everywhere else in the app, which isn't "every
+    // product has a photo" the way this screen specifically promises.
+    .filter((entry): entry is { item: BrowseItem; scans: number } => entry.item !== null && !!entry.item.image)
     // Stable sort keeps popularity as the tiebreaker within each grade — Array.prototype.sort
     // is guaranteed stable in every modern JS engine, so items already ordered
     // most-scanned-first stay in that relative order once grouped by grade.

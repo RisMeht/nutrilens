@@ -356,10 +356,9 @@ export default function Home() {
   {!resultSheetOpen && <nav className="tab-bar">
     <button className={tab === "history" ? "active" : ""} onClick={() => openTab("history")}><HistoryIcon size={19} /><span>History</span></button>
     <button className={tab === "recs" ? "active" : ""} onClick={() => openTab("recs")}><Sparkles size={19} /><span>Recs</span></button>
-    <div className="tab-scan-spacer" aria-hidden="true" />
+    <button className={`tab-scan${tab === "scan" ? " active" : ""}`} onClick={() => openTab("scan")}><span className="tab-scan-icon"><ScanLine size={17} /></span><span>Scan</span></button>
     <button className={tab === "top" ? "active" : ""} onClick={() => openTab("top")}><TrendingUp size={19} /><span>Top</span></button>
     <button className={tab === "search" ? "active" : ""} onClick={() => openTab("search")}><Search size={19} /><span>Search</span></button>
-    <button className={`tab-scan-fab${tab === "scan" ? " active" : ""}`} onClick={() => openTab("scan")} aria-label="Scan"><ScanLine size={23} /></button>
   </nav>}
   </main>;
 }
