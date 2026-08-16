@@ -130,8 +130,14 @@ export const buildHealthScore = ({
 export type RangeBucket = "low" | "moderate" | "high";
 export type NutrientRangeInfo = { bucket: RangeBucket; positionPct: number; good: boolean; bad: boolean; highIsGood: boolean };
 
-type RangeKey = "sugar" | "sodiumMg" | "satFat" | "fiber" | "protein";
+// Energy's official Nutri-Score thresholds are published in kJ; calories displayed on screen
+// are kcal, so the same table is re-expressed in kcal (÷4.184) rather than converting the
+// value at every call site.
+const CALORIE_THRESHOLDS = ENERGY_KJ_THRESHOLDS.map((kj) => kj / 4.184);
+
+type RangeKey = "calories" | "sugar" | "sodiumMg" | "satFat" | "fiber" | "protein";
 const RANGE_CONFIG: Record<RangeKey, { thresholds: number[]; goodDirection: "low" | "high" }> = {
+  calories: { thresholds: CALORIE_THRESHOLDS, goodDirection: "low" },
   sugar: { thresholds: SUGAR_THRESHOLDS, goodDirection: "low" },
   sodiumMg: { thresholds: SODIUM_MG_THRESHOLDS, goodDirection: "low" },
   satFat: { thresholds: SAT_FAT_THRESHOLDS, goodDirection: "low" },

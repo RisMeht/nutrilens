@@ -121,7 +121,14 @@ export async function GET(request: Request) {
     })
   ).slice(0, 3);
 
+  // Carbs and fat get no range: Nutri-Score itself only scores saturated fat and sugar
+  // specifically, never total carbs or total fat, so a colored good/bad slider for either
+  // would be asserting a threshold that doesn't actually exist.
   const facts = [
+    { label: "Calories", value: `${Math.round(display.energy)}`, range: nutrientRange("calories", display.energy, rangeScale) },
+    { label: "Protein", value: `${display.protein ? display.protein.toFixed(1) : "0"}g`, range: nutrientRange("protein", display.protein, rangeScale) },
+    { label: "Carbs", value: `${display.carbs ? display.carbs.toFixed(1) : "0"}g` },
+    { label: "Fat", value: `${display.fat ? display.fat.toFixed(1) : "0"}g` },
     { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g`, range: nutrientRange("sugar", display.sugar, rangeScale) },
     { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg`, range: nutrientRange("sodiumMg", display.sodiumMg, rangeScale) },
     { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g`, range: nutrientRange("satFat", display.satFat, rangeScale) },

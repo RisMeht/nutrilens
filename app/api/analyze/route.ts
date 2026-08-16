@@ -75,6 +75,10 @@ export async function POST(request: Request) {
     const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
     const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : 0;
 
+    const calories = toNumber(parsed.calories);
+    const protein = toNumber(parsed.protein);
+    const carbs = toNumber(parsed.carbs);
+    const fat = toNumber(parsed.fat);
     const sugar = toNumber(parsed.sugar_g);
     const sodium = toNumber(parsed.sodium_mg);
     const satFat = toNumber(parsed.sat_fat_g);
@@ -82,7 +86,14 @@ export async function POST(request: Request) {
     // Ranges use the same Nutri-Score threshold tables as barcode products, at scale 1 (a
     // single estimated serving has no reliable per-100g conversion from a photo alone) — a
     // directionally useful "how much is this, roughly" gauge rather than a precise density figure.
+    // Carbs and fat get no range: Nutri-Score itself only scores saturated fat and sugar
+    // specifically, never total carbs or total fat, so a colored good/bad slider for either
+    // would be asserting a threshold that doesn't actually exist.
     const facts = [
+      { label: "Calories", value: `${Math.round(calories)}`, range: nutrientRange("calories", calories) },
+      { label: "Protein", value: `${protein ? protein.toFixed(1) : "0"}g`, range: nutrientRange("protein", protein) },
+      { label: "Carbs", value: `${carbs ? carbs.toFixed(1) : "0"}g` },
+      { label: "Fat", value: `${fat ? fat.toFixed(1) : "0"}g` },
       { label: "Sugar", value: `${sugar ? sugar.toFixed(1) : "0"}g`, range: nutrientRange("sugar", sugar) },
       { label: "Sodium", value: `${Math.round(sodium)}mg`, range: nutrientRange("sodiumMg", sodium) },
       { label: "Sat fat", value: `${satFat ? satFat.toFixed(1) : "0"}g`, range: nutrientRange("satFat", satFat) },

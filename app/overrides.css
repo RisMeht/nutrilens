@@ -22,22 +22,41 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
    (reverted in layout.tsx). A generous fixed padding is the less elegant but safe fallback:
    works identically whether or not the browser ever reports real inset values. */
 header{padding-top:50px}
-.home-header{justify-content:flex-end}
-/* The title block and the "Scan food" card previously each had their own hand-picked
-   top:X% position — on any viewport where the actual rendered heights didn't match the
-   assumption behind those percentages, they'd collide. A flex column between the header and
-   the swipe button distributes the space instead, so it can't overlap on any screen size. */
-.home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(24px,5vh,44px)}
-.home-logo{width:88px;height:88px;border-radius:24px;display:block;margin:0 auto 20px;box-shadow:0 10px 26px #06150d80}
-.home-copy{position:static;transform:none;width:min(760px,calc(100% - 40px));text-align:center}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
+/* Redesigned home screen: a small brand lockup + help button in a real top bar (rather than
+   the previous plain centered logo/wordmark/tagline stack), a glowing circular hero visual with
+   a floating "what you'll get" stat chip as the actual focal point of the page, a proper
+   headline below it, then the scan card and swipe slider. */
+.home-topbar{position:absolute;z-index:2;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:50px clamp(22px,5vw,40px) 0}
+.home-brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-.03em;color:#f4fbee}
+.home-brand-icon{width:34px;height:34px;border-radius:10px;display:block;box-shadow:0 6px 16px #06150d80}
+/* The hero/title/card group previously had each piece hand-positioned by percentage — a flex
+   column between the top bar and the swipe button distributes the space instead, so nothing
+   can collide regardless of viewport height. */
+.home-main{position:absolute;z-index:1;top:118px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(22px,4.5vh,36px)}
+/* A circular glowing card is the actual visual centerpiece of the page now (previously just a
+   small square logo) — the floating score chip overlapping its bottom-left edge previews what
+   scanning actually gets you, the same "floating info card over the hero visual" idea the
+   reference layout uses, built from the app's own score-ring language rather than copying it. */
+.home-hero{position:relative;width:min(280px,62vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 30px 70px #06150d90,inset 0 0 0 1px #ffffff14;margin-bottom:2px}
+.home-hero-emoji{font-size:clamp(64px,16vw,96px);filter:drop-shadow(0 0 40px #baff5966)}
+.home-hero-chip{position:absolute;left:-8%;bottom:8%;display:flex;align-items:center;gap:10px;background:#112016ee;border:1px solid #ffffff1c;border-radius:16px;padding:9px 16px 9px 9px;box-shadow:0 14px 30px #06150dcc;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.home-hero-chip-ring{flex:none;width:34px;height:34px;border-radius:50%;background:#5fae4a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+.home-hero-chip-text{display:grid;line-height:1.15}
+.home-hero-chip-text b{font-size:17px;color:#f4fbee}
+.home-hero-chip-text small{font-size:10px;color:#a8b8a3;text-transform:uppercase;letter-spacing:.06em}
+.home-title{text-align:center;width:min(480px,calc(100% - 40px))}
+.home-title h1{margin:0;font-size:clamp(32px,7.5vw,50px);line-height:1.04;letter-spacing:-.04em;color:#f7faef}
+.home-title span{display:block;margin-top:12px;font-size:14.5px;line-height:1.5;color:#b9c7b4;max-width:320px;margin-left:auto;margin-right:auto}
 /* Now a real <button> (tapping the card itself opens the scan screen, same as swiping the
    slider below it) — reset the browser's default button chrome so it still looks like the
    plain card it always was, plus a light press/hover affordance to signal it's tappable. */
-.home-card{position:static;transform:none;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:transform .18s ease,filter .18s ease}
+.home-card{position:static;transform:none;width:min(410px,calc(100vw - 44px));height:auto;padding:20px 22px;align-items:center;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:transform .18s ease,filter .18s ease}
 .home-card:hover,.home-card:active{filter:brightness(1.08)}
 .home-card:active{transform:scale(.98)}
 .home-card:before{display:none}
-.home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
+.home-card-icon{flex:none;width:64px;height:64px;border-radius:18px;background:#1c331f;display:grid;place-items:center;font-size:32px;box-shadow:inset 0 0 0 1px #ffffff17}
+.home-card-text{flex:1}
+.home-card-arrow{flex:none;color:#8fa38b}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
 /* Leaves clearance above the persistent tab bar so the shutter row never sits underneath it. */
@@ -108,6 +127,11 @@ header{padding-top:50px}
 .barcode-frame{--beam-amp:36px}
 .scan-beam{left:50%;transform:translateX(-50%)}
 @keyframes beam{0%,100%{transform:translateX(-50%) translateY(calc(-1 * var(--beam-amp)));opacity:.25}50%{transform:translateX(-50%) translateY(var(--beam-amp));opacity:1}}
+/* A live food-photo capture plays the beam exactly once (up, then back down) as visible
+   confirmation the shot registered, then hands off to the spinner — rather than looping the
+   beam for the whole AI request, which made people keep the camera pointed at the food the
+   entire time for no reason once the photo was already captured. */
+.scan-beam-once{animation:beam .7s ease-in-out 1 both}
 @media(max-width:600px){.home-main{top:88px;bottom:100px;gap:22px}.top-copy{top:max(11%,140px)}.focus-frame{top:46%;--beam-amp:50px}.camera-empty{top:46%}.barcode-frame{--beam-amp:16px}
   .focus-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),60px)}
   .focus-frame i:nth-child(2){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),60px)}
@@ -132,7 +156,12 @@ header{padding-top:50px}
    whole row comfortably inside even the narrowest common viewport. */
 @media(max-width:400px){.mode-row{gap:8px}.mode-side-btn{width:38px;height:38px}.mode-switch button{padding:10px 18px}}
 
-.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
+.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}/* The additive-detail/nutrient-detail/Help dialogs all reuse .help-backdrop, whose z-index
+   (30, from globals.css) sat BELOW .full-page (32) — opening one from a result viewed on
+   Top/Search/Recs/History rendered it invisibly behind that still-mounted page, only becoming
+   visible once the page was closed. Bumped above every other layer including the tab bar (36)
+   since a modal should always win. */
+.help-backdrop{position:fixed;inset:0;z-index:40;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
 /* Better Swaps tiles are now real buttons (tap to open that swap's own full result) rather
    than static article cards — reset the browser's default button chrome so they still look
    exactly like the plain photo tiles they replace. */
@@ -207,6 +236,13 @@ header{padding-top:50px}
    health score itself is built from, so it never disagrees with what the score is rewarding
    or penalizing. */
 .nutrition-row div{position:relative;padding-bottom:19px}
+/* Every nutrition-row cell is now a real <button> (tapping any of them — not just the four with
+   range bars — opens a detail sheet explaining what it means), so it needs the same
+   background/padding/centering the old plain <div> cells had, plus a button reset since browser
+   button chrome doesn't match a plain grid cell by default. */
+.nutrition-row button{background:#e8eee5;padding:13px 8px;text-align:center;position:relative;padding-bottom:19px;border:0;cursor:pointer;font:inherit;color:inherit;display:block;width:100%;transition:background .15s ease,transform .15s ease}
+.nutrition-row button:hover,.nutrition-row button:active{background:#dde6d8}
+.nutrition-row button:active{transform:scale(.96)}
 .range-bar{position:absolute;left:12px;right:12px;bottom:9px;height:4px;border-radius:2px;background:linear-gradient(90deg,#7fc768,#e8c765,#e2895f);display:block}
 .range-bar em{position:absolute;top:50%;width:7px;height:7px;border-radius:50%;background:#18311d;box-shadow:0 0 0 2px #f4f7ee;transform:translate(-50%,-50%)}
 /* Sugar/Sodium/Sat fat are "low is good" — a low position on the track (left) is the green
@@ -253,6 +289,17 @@ header{padding-top:50px}
 /* Ingredient detail sheet — reuses the Help dialog's own card/backdrop/animation, just with
    different content, so tapping an additive feels like the same app rather than a new pattern. */
 .additive-detail-card h2{font-size:22px}
+
+/* Nutrient detail sheet — same reused Help dialog pattern as the additive one above, with a
+   large value readout and (when a real threshold exists) the same range-bar used inline on the
+   results screen, just laid out in normal flow instead of absolutely positioned in a tiny cell. */
+.nutrient-detail-value{display:block;font-size:36px;font-weight:700;letter-spacing:-.03em;color:#18311d;line-height:1}
+.nutrient-detail-card h2{margin:5px 0 16px;font-size:20px}
+.nutrient-detail-range{margin:0 0 16px;padding:14px 16px;border-radius:12px;background:#eef4ea}
+.nutrient-detail-range .range-bar{position:relative;left:0;right:0;bottom:0;margin-bottom:12px}
+.nutrient-detail-range span{font-size:13px;font-weight:600;color:#3c5240}
+.nutrient-detail-range span.range-good{color:#3f7a37}
+.nutrient-detail-range span.range-bad{color:#a3402c}
 
 /* History / Recs / Top / Search are real full-screen pages (position:fixed, no centered card)
    rather than a small dialog. Root cause of the earlier "cut off on iPhone" bug: a centered

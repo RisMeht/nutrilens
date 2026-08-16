@@ -1,4 +1,35 @@
-import { toNumber } from "./nutrition";
+import { buildHealthScore, toNumber } from "./nutrition";
+
+// The grade shown on a list/grid tile has to agree with the grade the SAME product shows once
+// actually opened, or it reads as a bug ("why does this say B here and D when I tap it?"). The
+// full result's grade ultimately comes from either this same deterministic math (the instant
+// /api/barcode response) or the AI's holistic re-score in /api/barcode/enrich — never from Open
+// Food Facts' own nutriscore_grade, which is a different scoring system entirely and can land
+// on a completely different letter. Computing every list-tile grade with this same
+// buildHealthScore function (rather than trusting nutriscore_grade) keeps them in agreement.
+const hasCoreNutriments = (nutriments: Record<string, unknown>): boolean =>
+  ["energy-kcal_100g", "energy_kcal", "sugars_100g", "fat_100g", "proteins_100g"].some((key) => nutriments[key] !== undefined && nutriments[key] !== null);
+
+const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): string => {
+  if (!hasCoreNutriments(nutriments)) return "?";
+  const sodiumMg = toNumber(nutriments.sodium_100g) * 1000 || (toNumber(nutriments.salt_100g) / 2.5) * 1000;
+  const fruitVegPct = toNumber(
+    nutriments["fruits-vegetables-nuts-estimate-from-ingredients_100g"] ??
+      nutriments["fruits-vegetables-nuts_100g"] ??
+      nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
+  );
+  const { grade } = buildHealthScore({
+    sugarPer100g: toNumber(nutriments.sugars_100g),
+    sodiumMgPer100g: sodiumMg,
+    satFatPer100g: toNumber(nutriments["saturated-fat_100g"]),
+    fiberPer100g: toNumber(nutriments.fiber_100g),
+    proteinPer100g: toNumber(nutriments.proteins_100g),
+    energyPer100g: toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal),
+    novaGroup: toNumber(novaGroupRaw),
+    fruitVegPct
+  });
+  return grade;
+};
 
 const OFF_BASE = "https://world.openfoodfacts.org";
 // Open Food Facts' legacy /cgi/search.pl endpoint (used here until now) currently returns a
@@ -97,7 +128,7 @@ export const findBetterSwaps = async ({
   const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
   searchUrl.searchParams.set("q", productName || "food");
   searchUrl.searchParams.set("page_size", "30");
-  searchUrl.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,categories_tags,nutriments");
+  searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriments,nova_group");
 
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
   if (!response?.ok) return [] as Array<{ name: string; image: string; code: string; grade?: string }>;
@@ -121,17 +152,17 @@ export const findBetterSwaps = async ({
       const image = toSizedImage(rawImage, GRID_IMAGE_SIZE);
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
+      const grade = gradeFromNutriments(nutriments, item.nova_group);
       const improvement =
         (sugarPer100g - sugar) * 2 +
         (sodiumMgPer100g - sodiumMg) / 80 +
         (satFatPer100g - satFat) * 2 +
         (energyPer100g - energy) / 80 +
-        (6 - nutriRank(item.nutriscore_grade)) +
+        (6 - nutriRank(grade)) +
         overlapScore;
 
       const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "Healthier option";
-      const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : undefined;
-      return { name, image, code, grade, improvement };
+      return { name, image, code, grade: grade === "?" ? undefined : grade, improvement };
     })
     .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => Boolean(item && item.improvement > 1.5))
     .sort((a, b) => b.improvement - a.improvement)
@@ -187,7 +218,7 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
       searchUrl.searchParams.set("q", name);
       searchUrl.searchParams.set("page_size", "5");
-      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriscore_grade");
+      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriments,nova_group");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
@@ -207,17 +238,18 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
       // real full result later (Recommendations) rather than just shown as a static image.
       const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
-      const grade = withImage && typeof withImage.nutriscore_grade === "string" && /^[a-e]$/.test(withImage.nutriscore_grade) ? withImage.nutriscore_grade.toUpperCase() : undefined;
-      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade };
+      const grade = withImage ? gradeFromNutriments((withImage.nutriments || {}) as Record<string, unknown>, withImage.nova_group) : "?";
+      const gradeOut = grade === "?" ? undefined : grade;
+      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade: gradeOut };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
-      return { name, image: wikiImage, code, grade };
+      return { name, image: wikiImage, code, grade: gradeOut };
     })
   );
 
-  // Keep every suggested alternative even when neither source has a photo for it — the
-  // client falls back to a generated placeholder tile rather than the swap disappearing entirely.
-  return resolved;
+  // If neither Open Food Facts nor Wikimedia has a real photo for a suggested swap, drop it
+  // entirely rather than showing a generated placeholder tile as if it were a real option.
+  return resolved.filter((item) => item.image);
 };
 
 export type BrowseItem = { code: string; name: string; image: string; grade: string };
@@ -227,24 +259,25 @@ const mapBrowseItem = (item: Record<string, unknown>): BrowseItem | null => {
   const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "";
   if (!code || !name) return null;
   const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
-  const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : "?";
+  const grade = gradeFromNutriments((item.nutriments || {}) as Record<string, unknown>, item.nova_group);
   return { code, name, image: rawImage ? toSizedImage(rawImage, GRID_IMAGE_SIZE) : "", grade };
 };
 
 // Backs the Search screen — plain relevance ranking (the API's default when no sort_by is
 // given), same as typing into any search box: the point is finding the specific thing typed,
-// not being redirected toward whatever happens to be highest-rated.
+// not being redirected toward whatever happens to be highest-rated. Every result must have a
+// real photo — an item with none is dropped rather than shown with a generated placeholder.
 const searchProducts = async (query: string): Promise<BrowseItem[]> => {
   const url = new URL(`${OFF_SEARCH_BASE}/search`);
   url.searchParams.set("q", query);
   url.searchParams.set("page_size", "24");
-  url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url");
+  url.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,nutriments,nova_group");
 
   const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 3600 } }), 8000).catch(() => null);
   if (!response?.ok) return [];
   const data = await response.json();
   const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
-  return products.map(mapBrowseItem).filter((item): item is BrowseItem => item !== null);
+  return products.map(mapBrowseItem).filter((item): item is BrowseItem => item !== null && !!item.image);
 };
 
 const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
@@ -266,7 +299,7 @@ const topProductsForCategory = async (category: string): Promise<BrowseItem[]> =
   url.searchParams.set("q", `categories_tags:"${category}" AND countries_tags:"en:united-states" AND lang:en`);
   url.searchParams.set("sort_by", "-unique_scans_n");
   url.searchParams.set("page_size", "60");
-  url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,unique_scans_n");
+  url.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,unique_scans_n,nutriments,nova_group");
 
   const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 3600 } }), 8000).catch(() => null);
   if (!response?.ok) return [];

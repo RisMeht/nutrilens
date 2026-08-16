@@ -5,6 +5,7 @@ import { DecodeHintType } from "@zxing/library";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { optimizedImageUrl } from "../lib/image";
 
 type Alternative = { name: string; image?: string; code?: string; grade?: string };
 type NutrientRange = { bucket: "low" | "moderate" | "high"; positionPct: number; good: boolean; bad: boolean; highIsGood: boolean };
@@ -184,12 +185,17 @@ const timeAgo = (ts: number) => {
 export default function Home() {
   const [mode, setMode] = useState<ScanMode>("food"), [cameraOn, setCameraOn] = useState(false), [entered, setEntered] = useState(false), [facing, setFacing] = useState<"environment" | "user">("environment");
   const [loading, setLoading] = useState(false), [result, setResult] = useState<Result | null>(null), [error, setError] = useState(""), [cameraError, setCameraError] = useState(""), [helpOpen, setHelpOpen] = useState(false);
+  // "pulse" = the brief one-shot beam right after a live shutter capture; "processing" = the
+  // spinner for the remainder of the AI request (also the immediate state for a gallery pick,
+  // which skips the pulse entirely — see file()/takeFoodScan() below).
+  const [captureState, setCaptureState] = useState<"idle" | "pulse" | "processing">("idle");
   const [sheetClosing, setSheetClosing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
   const [torchOn, setTorchOn] = useState(false), [torchSupported, setTorchSupported] = useState(false);
   const [homeLeaving, setHomeLeaving] = useState(false);
   const [additiveDetail, setAdditiveDetail] = useState<AdditiveFlag | null>(null);
+  const [nutrientDetail, setNutrientDetail] = useState<NutritionFact | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("scan");
   const [searchSeed, setSearchSeed] = useState("");
@@ -344,12 +350,12 @@ export default function Home() {
           if (result && !cancelled) { cancelled = true; barcodeResult(result.getText()); return; }
         } catch { /* no barcode in this frame yet — keep scanning */ }
       }
-      timeoutId = window.setTimeout(tick, 200);
+      timeoutId = window.setTimeout(tick, 90);
     };
     // Waits out the mode-switch CSS transition before the decode loop starts competing for
     // the main thread — starting it immediately was still enough to make the transition (which
     // plays over roughly this same window) stutter, even at a downscaled resolution.
-    timeoutId = window.setTimeout(tick, 220);
+    timeoutId = window.setTimeout(tick, 140);
     return () => { cancelled = true; window.clearTimeout(timeoutId); };
   }, [mode, cameraOn, cameraReady, barcodeResult]);
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -367,10 +373,25 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "The food scan did not finish.");
     } finally {
       setLoading(false);
+      setCaptureState("idle");
     }
   };
-  const takeFoodScan = () => { const source = video.current; if (!source || !source.videoWidth) return imageInput.current?.click(); const c = document.createElement("canvas"), ratio = Math.min(1, 1400 / source.videoWidth); c.width = Math.round(source.videoWidth * ratio); c.height = Math.round(source.videoHeight * ratio); c.getContext("2d")?.drawImage(source, 0, 0, c.width, c.height); analyze(c.toDataURL("image/jpeg", .8)); };
-  const file = (f?: File) => { if (!f) return; const reader = new FileReader(); reader.onload = () => analyze(reader.result as string); reader.readAsDataURL(f); };
+  // A live shutter capture gets one brief beam pulse (rather than looping it for the whole AI
+  // request, which used to make people keep the phone held up pointed at the food the entire
+  // time) before switching to the same loading spinner barcode mode already uses. A
+  // gallery-picked photo has no "aim the camera" moment to justify a beam at all, so it jumps
+  // straight to the spinner.
+  const takeFoodScan = () => {
+    const source = video.current;
+    if (!source || !source.videoWidth) return imageInput.current?.click();
+    const c = document.createElement("canvas"), ratio = Math.min(1, 1400 / source.videoWidth);
+    c.width = Math.round(source.videoWidth * ratio); c.height = Math.round(source.videoHeight * ratio);
+    c.getContext("2d")?.drawImage(source, 0, 0, c.width, c.height);
+    setCaptureState("pulse");
+    window.setTimeout(() => setCaptureState(s => (s === "pulse" ? "processing" : s)), 700);
+    analyze(c.toDataURL("image/jpeg", .8));
+  };
+  const file = (f?: File) => { if (!f) return; setCaptureState("processing"); const reader = new FileReader(); reader.onload = () => analyze(reader.result as string); reader.readAsDataURL(f); };
   const changeMode = (next: ScanMode) => {
     if (next === mode) return;
     setMode(next);
@@ -384,6 +405,8 @@ export default function Home() {
   // exactly as it was before this result was opened.
   const closeResult = () => {
     setSheetClosing(true);
+    setNutrientDetail(null);
+    setAdditiveDetail(null);
     if (tab === "scan") setCameraOn(true);
     window.setTimeout(() => { setResult(null); setError(""); setCameraError(""); setSheetClosing(false); }, 220);
   };
@@ -391,6 +414,8 @@ export default function Home() {
   // regardless of which tab the result happened to be opened from.
   const scanAnotherFood = () => {
     setSheetClosing(true);
+    setNutrientDetail(null);
+    setAdditiveDetail(null);
     setTab("scan");
     setCameraOn(true); // start reopening the camera immediately, in parallel with the sheet's own closing animation
     window.setTimeout(() => { setResult(null); setError(""); setCameraError(""); setSheetClosing(false); }, 220);
@@ -413,15 +438,28 @@ export default function Home() {
     }
   };
   const grade = result?.grade?.toLowerCase() || "a";
-  const displayNumber = (value: number | undefined, suffix = "") => Number.isFinite(value) ? `${value}${suffix}` : "—";
-  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}><header className="home-header"><button className="help" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button></header><div className="home-main"><div className="home-copy"><img className="home-logo" src="/logo" alt="" /><h1>Nura</h1><span>Know what you eat.</span></div><button type="button" className="home-card" onClick={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }}><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div></button></div><SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />{helpOpen && <Help onClose={() => setHelpOpen(false)} />}</main>;
+  // A poorly-rated item's biggest concerns are the most important thing to see first — pulled
+  // up above the macro/nutrient breakdown instead of waiting at the bottom of the page. A
+  // well-rated item keeps the friendlier default order (highlights first, concerns after).
+  const isPoor = !!result && (result.grade === "D" || result.grade === "E" || (typeof result.score === "number" && result.score < 45));
+  const concernsBlock = result?.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null;
+  if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}>
+    <div className="home-topbar"><div className="home-brand"><img className="home-brand-icon" src="/logo" alt="" /><span>Nura</span></div><button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div>
+    <div className="home-main">
+      <div className="home-hero"><div className="home-hero-emoji">🥗</div><div className="home-hero-chip"><span className="home-hero-chip-ring">A</span><div className="home-hero-chip-text"><b>92</b><small>Health score</small></div></div></div>
+      <div className="home-title"><h1>Know what<br />you eat.</h1><span>Scan any food or barcode for an instant, honest health breakdown.</span></div>
+      <button type="button" className="home-card" onClick={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }}><div className="home-card-icon">🥗</div><div className="home-card-text"><strong>Scan food</strong><span>Photo or barcode</span></div><ChevronRight size={20} className="home-card-arrow" /></button>
+    </div>
+    <SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />
+    {helpOpen && <Help onClose={() => setHelpOpen(false)} />}
+  </main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
     <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />Nura</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
-    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{((mode === "barcode" && !loading && cameraReady) || (mode === "food" && loading)) && <div className="scan-beam" />}{loading && mode === "barcode" && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
+    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && !loading && cameraReady && <div className="scan-beam" />}{mode === "food" && loading && captureState === "pulse" && <div className="scan-beam scan-beam-once" />}{loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse")) && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch" ref={modeSwitchRef}>{modeIndicator.ready && <div className="mode-switch-indicator" style={{ left: modeIndicator.left, width: modeIndicator.width }} />}<button data-mode="food" className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button data-mode="barcode" className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
-  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-wrap"><div className="result-photo-banner"><img src={result.image || fallbackFoodImage(result.name)} alt={result.name} onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div><div className="nutrition-row"><div><b>{displayNumber(result.calories)}</b><span>Calories</span></div><div><b>{displayNumber(result.protein, "g")}</b><span>Protein</span></div><div><b>{displayNumber(result.carbs, "g")}</b><span>Carbs</span></div><div><b>{displayNumber(result.fat, "g")}</b><span>Fat</span></div>{result.facts?.map((fact, i) => <div key={`${fact.label}-${i}`}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</div>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">Weighted roughly 60% nutrition · 30% additives · 10% organic bonus.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || result.concerns?.length || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{result.concerns?.length ? <div className="concerns"><strong><AlertTriangle size={16} /> Watch for</strong>{result.concerns.map((item, i) => <p key={i}>{item}</p>)}</div> : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><img src={item.image || fallbackFoodImage(item.name)} alt={item.name} loading="lazy" decoding="async" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} />{item.grade && <em className={`swap-grade grade-${item.grade.toLowerCase()}`}>{item.grade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}
+  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content"><div className="result-photo-wrap"><div className="result-photo-banner"><img src={result.image ? optimizedImageUrl(result.image, 640) : fallbackFoodImage(result.name)} alt={result.name} fetchPriority="high" onError={event => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(result.name); }} /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div>{isPoor && concernsBlock}<div className="nutrition-row">{result.facts?.map((fact, i) => <button type="button" key={`${fact.label}-${i}`} onClick={() => setNutrientDetail(fact)}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</button>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">Weighted roughly 60% nutrition · 30% additives · 10% organic bonus.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || (!isPoor && result.concerns?.length) || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{!isPoor ? concernsBlock : null}{result.alternatives?.length ? <div className="alternatives"><strong>Better swaps</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><img src={item.image ? optimizedImageUrl(item.image, 256) : fallbackFoodImage(item.name)} alt={item.name} loading="lazy" decoding="async" onError={(event) => { (event.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} />{item.grade && <em className={`swap-grade grade-${item.grade.toLowerCase()}`}>{item.grade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>)}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}
   {tab === "history" && <History list={historyList} clearArmed={clearArmed} onClose={() => setTab("scan")} onView={viewHistoryEntry} onDelete={removeHistoryEntry} onClearAll={clearAllHistory} />}
   {tab === "recs" && <Recs onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); }} onSearch={(q) => { setTab("search"); setSearchSeed(q); }} />}
   {tab === "top" && <Top onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); addHistoryEntry(r).catch(() => {}); }} />}
@@ -507,6 +545,32 @@ function AdditiveDetail({ item, onClose }: { item: AdditiveFlag; onClose: () => 
   const [closing, setClosing] = useState(false);
   const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
   return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card additive-detail-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><span className={`risk-pill risk-${item.risk}`}><i className="risk-dot" />{RISK_LABEL[item.risk]}</span><h2>{item.name}</h2><p>{item.detail || item.note}</p><p className="help-note">Based on mainstream food-safety research (EFSA/IARC-style evidence), not a personal medical assessment.</p></section></div>;
+}
+
+// Explains what each macro/nutrient actually does and why it's (or isn't) directly scored —
+// static, hand-written copy rather than an extra AI call, so tapping a nutrient is instant
+// rather than triggering a network round trip for a short explanation that doesn't change
+// per-product.
+const NUTRIENT_INFO: Record<string, string> = {
+  Calories: "Calories measure the energy this food provides. Consistently eating more than your body burns leads to weight gain over time — how much counts as \"a lot\" depends on your daily needs, but a food that's very energy-dense for its serving size is worth noticing.",
+  Protein: "Protein supports muscle repair and keeps you fuller for longer. It's one of the few things Nutri-Score directly rewards — more of it, from a food that isn't otherwise unbalanced, is a genuinely good sign.",
+  Carbs: "Carbohydrates are the body's primary fuel source. The total amount alone doesn't say much about quality — a whole grain and a spoonful of table sugar are both \"carbs\" but behave very differently, which is why sugar specifically (not total carbs) is what gets scored below.",
+  Fat: "Fat is essential for hormone production and absorbing certain vitamins. Like carbs, the total alone doesn't indicate quality — unsaturated fats (nuts, olive oil, fish) are broadly protective, while saturated fat, scored separately below, is the type worth limiting.",
+  Sugar: "Added and natural sugars both count here. Excess sugar is linked to weight gain, energy crashes, and long-term metabolic risk — it's one of the four nutrients Nutri-Score penalizes directly.",
+  Sodium: "Sodium (salt), eaten in excess, is linked to high blood pressure and cardiovascular strain over time. Most people eat well above the recommended daily amount without realizing it, largely from packaged and restaurant food.",
+  "Sat fat": "Saturated fat, eaten in excess, is linked to higher LDL (\"bad\") cholesterol and cardiovascular risk. Unlike total fat, this one is directly penalized by Nutri-Score.",
+  Fiber: "Fiber slows digestion, feeds healthy gut bacteria, and helps you feel full — most people eat well below the recommended amount. More of it is one of the few things that can meaningfully raise a food's score."
+};
+const RANGE_QUALIFIER = (range: NutrientRange): string => {
+  if (range.bucket === "moderate") return "This is a moderate amount for this nutrient.";
+  const high = range.bucket === "high";
+  if (range.highIsGood) return high ? "That's on the higher end — a good sign." : "That's on the lower end — worth boosting.";
+  return high ? "That's on the higher end — worth watching." : "That's on the lower end — a good sign.";
+};
+function NutrientDetail({ fact, onClose }: { fact: NutritionFact; onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card nutrient-detail-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><span className="nutrient-detail-value">{fact.value}</span><h2>{fact.label}</h2>{fact.range && <div className="nutrient-detail-range"><i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i><span className={fact.range.good ? "range-good" : fact.range.bad ? "range-bad" : ""}>{RANGE_QUALIFIER(fact.range)}</span></div>}<p>{NUTRIENT_INFO[fact.label] || ""}</p></section></div>;
 }
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -597,7 +661,7 @@ function History({ list, clearArmed, onClose, onView, onDelete, onClearAll }: { 
       {list.length === 0 ? <p className="page-empty">No scans yet — everything you scan will show up here, saved on this device only.</p> : <div className="history-list">
         {list.map((entry, i) => <div key={entry.historyId} className="history-row stagger-in" style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
           <button className="history-row-main" onClick={() => onView(entry)}>
-            <img src={entry.image || fallbackFoodImage(entry.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(entry.name); }} />
+            <img src={entry.image ? optimizedImageUrl(entry.image, 96) : fallbackFoodImage(entry.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(entry.name); }} />
             <div className="history-row-text"><b>{entry.name}</b><span>{timeAgo(entry.scannedAt)}</span></div>
             <em className={`history-grade grade-${entry.grade.toLowerCase()}`}>{entry.grade}</em>
           </button>
@@ -625,7 +689,7 @@ const TOP_CATEGORIES: { label: string; emoji: string; tag: string }[] = [
 // lookup+AI pipeline as an actual barcode scan (resolveBarcodeResult) when tapped.
 function ProductGrid({ items, selecting, onSelect }: { items: BrowseItem[]; selecting: string | null; onSelect: (code: string) => void }) {
   return <div className="browse-grid">{items.map((item, i) => <button key={item.code} className="browse-tile stagger-in" style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }} disabled={!!selecting} onClick={() => onSelect(item.code)}>
-    <div className="browse-tile-img"><img src={item.image || fallbackFoodImage(item.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} />{selecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={22} /></div>}</div>
+    <div className="browse-tile-img"><img src={item.image ? optimizedImageUrl(item.image, 256) : fallbackFoodImage(item.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(item.name); }} />{selecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={22} /></div>}</div>
     <span>{item.name}</span>
     {item.grade !== "?" && <em className={`history-grade grade-${item.grade.toLowerCase()}`}>{item.grade}</em>}
   </button>)}</div>;
@@ -791,11 +855,11 @@ function Recs({ onClose, onOpenResult, onSearch }: { onClose: () => void; onOpen
       {pickError && <p className="page-empty">{pickError}</p>}
       {pairs.length > 0 && <div className="recs-list">{pairs.map((pair, i) => <div key={`${pair.bad.historyId}-${i}`} className="recs-pair stagger-in" style={{ animationDelay: `${i * 50}ms` }}>
         <button className="recs-tile recs-bad" onClick={() => onOpenResult(pair.bad)}>
-          <div className="recs-tile-img"><img src={pair.bad.image || fallbackFoodImage(pair.bad.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(pair.bad.name); }} /><i className="recs-badge recs-badge-bad"><X size={13} /></i></div>
+          <div className="recs-tile-img"><img src={pair.bad.image ? optimizedImageUrl(pair.bad.image, 256) : fallbackFoodImage(pair.bad.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(pair.bad.name); }} /><i className="recs-badge recs-badge-bad"><X size={13} /></i></div>
           <span>{pair.bad.name}</span>
         </button>
         <button className="recs-tile recs-good" disabled={!!selecting} onClick={() => openGood(pair.good)}>
-          <div className="recs-tile-img"><img src={pair.good.image || fallbackFoodImage(pair.good.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(pair.good.name); }} />{selecting === pair.good.code ? <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div> : <i className="recs-badge recs-badge-good">✓</i>}</div>
+          <div className="recs-tile-img"><img src={pair.good.image ? optimizedImageUrl(pair.good.image, 256) : fallbackFoodImage(pair.good.name)} alt="" loading="lazy" decoding="async" onError={ev => { (ev.currentTarget as HTMLImageElement).src = fallbackFoodImage(pair.good.name); }} />{selecting === pair.good.code ? <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div> : <i className="recs-badge recs-badge-good">✓</i>}</div>
           <span>{pair.good.name}</span>
         </button>
       </div>)}</div>}
