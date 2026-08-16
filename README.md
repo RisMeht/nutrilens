@@ -1,6 +1,6 @@
-# NutriLens
+# Nura
 
-NutriLens is a mobile-first food scanner with two paths:
+Nura is a mobile-first food scanner with two paths:
 
 - **Food photo:** sends a compressed user-selected image through a server route to OpenRouter for a structured nutrition estimate.
 - **Barcode:** uses Open Food Facts product records with serving-based nutrient calculations and health scoring.

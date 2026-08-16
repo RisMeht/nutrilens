@@ -7,7 +7,7 @@ const OFF_BASE = "https://world.openfoodfacts.org";
 // gracefully rather than throw. Their newer Elasticsearch-backed Search API is a near
 // drop-in replacement (same field names via `fields=`, `hits` instead of `products`).
 const OFF_SEARCH_BASE = "https://search.openfoodfacts.org";
-const OFF_HEADERS = { "User-Agent": "NutriLens/1.0 (nutrition scanner)" };
+const OFF_HEADERS = { "User-Agent": "Nura/1.0 (nutrition scanner)" };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs = 9000) => {
   return await Promise.race([
@@ -45,7 +45,11 @@ const GRID_IMAGE_SIZE = 400;
 export const productImageUrl = (product: Record<string, unknown>): string => {
   const candidates = [product.image_front_url, product.image_url, product.image_front_small_url, product.image_small_url];
   const found = candidates.find((value): value is string => typeof value === "string" && value.length > 0);
-  return found ? toSizedImage(found, "full") : "";
+  // The true ".full" original is often several MB straight from a phone upload — displayed at
+  // only ~150-180px tall in the result banner, that's bytes spent on detail nobody can see.
+  // The 400px tier (Open Food Facts' largest fixed non-full size) is still sharp at that
+  // display height and loads dramatically faster.
+  return found ? toSizedImage(found, GRID_IMAGE_SIZE) : "";
 };
 
 // A handful of category tags that mean "not actually a food product" — Open Food Facts'
@@ -96,7 +100,7 @@ export const findBetterSwaps = async ({
   searchUrl.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,categories_tags,nutriments");
 
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
-  if (!response?.ok) return [] as Array<{ name: string; image: string; code: string }>;
+  if (!response?.ok) return [] as Array<{ name: string; image: string; code: string; grade?: string }>;
   const data = await response.json();
   const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
 
@@ -126,12 +130,13 @@ export const findBetterSwaps = async ({
         overlapScore;
 
       const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "Healthier option";
-      return { name, image, code, improvement };
+      const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : undefined;
+      return { name, image, code, grade, improvement };
     })
-    .filter((item): item is { name: string; image: string; code: string; improvement: number } => Boolean(item && item.improvement > 1.5))
+    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => Boolean(item && item.improvement > 1.5))
     .sort((a, b) => b.improvement - a.improvement)
     .slice(0, 4)
-    .map(({ name, image, code }) => ({ name, image, code }));
+    .map(({ name, image, code, grade }) => ({ name, image, code, grade }));
 };
 
 // Free, no-key, legally-clear real photos for generic/home foods that Open Food Facts (mostly
@@ -165,7 +170,7 @@ export const wikimediaImageFor = async (query: string): Promise<string> => {
 };
 
 export const enrichAlternativesWithImages = async (alternatives: unknown) => {
-  if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string; code?: string }>;
+  if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string; code?: string; grade?: string }>;
   const names = alternatives
     .map((entry) => {
       if (typeof entry === "string") return entry.trim();
@@ -182,7 +187,7 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
       searchUrl.searchParams.set("q", name);
       searchUrl.searchParams.set("page_size", "5");
-      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags");
+      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriscore_grade");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
@@ -202,10 +207,11 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
       // real full result later (Recommendations) rather than just shown as a static image.
       const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
-      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code };
+      const grade = withImage && typeof withImage.nutriscore_grade === "string" && /^[a-e]$/.test(withImage.nutriscore_grade) ? withImage.nutriscore_grade.toUpperCase() : undefined;
+      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
-      return { name, image: wikiImage, code };
+      return { name, image: wikiImage, code, grade };
     })
   );
 

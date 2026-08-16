@@ -7,6 +7,12 @@
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .help,.gallery,.flip{-webkit-backdrop-filter:blur(7px)}
 .result-sheet{-webkit-backdrop-filter:blur(10px)}
+/* A result opened from History/Recs/Top/Search no longer forces the tab back to "scan" (see
+   page.tsx), so that full-page tab (z-index 32) stays mounted underneath the sheet instead of
+   being replaced by the camera screen. The sheet's own z-index (10, from globals.css) sat
+   BELOW that — bumped above it here so the sheet still renders on top rather than invisibly
+   behind the still-open page. */
+.result-sheet{z-index:34}
 
 /* Installed as a standalone PWA (statusBarStyle:"black-translucent" in layout.tsx), iOS draws
    its status bar as an overlay on top of the page rather than pushing content down for it — so
@@ -24,7 +30,12 @@ header{padding-top:50px}
 .home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(24px,5vh,44px)}
 .home-logo{width:88px;height:88px;border-radius:24px;display:block;margin:0 auto 20px;box-shadow:0 10px 26px #06150d80}
 .home-copy{position:static;transform:none;width:min(760px,calc(100% - 40px));text-align:center}.home-copy h1{font-size:clamp(52px,10vw,88px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0}.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
-.home-card{position:static;transform:none;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center}
+/* Now a real <button> (tapping the card itself opens the scan screen, same as swiping the
+   slider below it) — reset the browser's default button chrome so it still looks like the
+   plain card it always was, plus a light press/hover affordance to signal it's tappable. */
+.home-card{position:static;transform:none;width:min(410px,calc(100vw - 44px));height:auto;padding:24px 26px;align-items:center;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:transform .18s ease,filter .18s ease}
+.home-card:hover,.home-card:active{filter:brightness(1.08)}
+.home-card:active{transform:scale(.98)}
 .home-card:before{display:none}
 .home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
@@ -47,7 +58,14 @@ header{padding-top:50px}
    the camera feed extending under the header/footer chrome rather than a separate block behind it. */
 .camera-shade{background:linear-gradient(180deg,#06150d78 0%,transparent 30%,transparent 66%,#06150d7a 100%)}
 .mode-barcode .scan-actions .shutter span{box-shadow:0 0 34px #baff5988}@keyframes text-fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
-.mode-switch button{transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
+.mode-switch button{position:relative;z-index:1;transition:transform .18s ease,filter .18s ease,background-color .22s ease,color .22s ease}
+/* Same sliding-pill trick as the tab bar: the highlight now transitions smoothly between
+   Food/Barcode instead of the selected button's background just swapping instantly. Qualified
+   as `.mode-switch button.selected` (class+type, specificity 0,2,1) to out-specificity the
+   plain `.mode-switch .selected` rule in globals.css (0,2,0) regardless of file load order. */
+.mode-switch{position:relative}
+.mode-switch button.selected{background:transparent}
+.mode-switch-indicator{position:absolute;top:5px;bottom:5px;border-radius:9px;background:#baff59;z-index:0;pointer-events:none;transition:left .3s cubic-bezier(.34,1.1,.64,1),width .3s cubic-bezier(.34,1.1,.64,1)}
 .shutter span{animation:text-fade .3s ease both}
 /* A camera that's just been granted permission eases in with a little settle rather than a flat cut-to-visible. */
 .camera-feed{transform:scale(1.04);transition:opacity .5s ease,transform .7s cubic-bezier(.2,.8,.2,1)}.camera-active .camera-feed{transform:scale(1)}
@@ -114,7 +132,19 @@ header{padding-top:50px}
    whole row comfortably inside even the narrowest common viewport. */
 @media(max-width:400px){.mode-row{gap:8px}.mode-side-btn{width:38px;height:38px}.mode-switch button{padding:10px 18px}}
 
-.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:110px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:92px}}
+.sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
+/* Better Swaps tiles are now real buttons (tap to open that swap's own full result) rather
+   than static article cards — reset the browser's default button chrome so they still look
+   exactly like the plain photo tiles they replace. */
+.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:10px}
+.alternatives-grid button{display:block;width:100%;border:0;padding:0;margin:0;font:inherit;color:inherit;text-align:left;cursor:pointer;background:#dff2d8;border-radius:12px;overflow:hidden;transition:transform .15s ease,filter .15s ease}
+.alternatives-grid button:hover,.alternatives-grid button:active{transform:translateY(-2px);filter:brightness(.98)}
+.alternatives-grid button:disabled{cursor:default}
+.alt-img-wrap{position:relative}
+.alternatives-grid img{display:block;width:100%;height:110px;object-fit:cover}
+.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}
+.swap-grade{position:absolute;right:7px;top:7px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;box-shadow:0 2px 6px #0007}
+@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:92px}}
 
 /* Closing animations — both the help dialog and the results sheet used to unmount instantly
    with no exit transition ("flash closed"). A brief local "closing" state now plays a real
@@ -179,6 +209,14 @@ header{padding-top:50px}
 .nutrition-row div{position:relative;padding-bottom:19px}
 .range-bar{position:absolute;left:12px;right:12px;bottom:9px;height:4px;border-radius:2px;background:linear-gradient(90deg,#7fc768,#e8c765,#e2895f);display:block}
 .range-bar em{position:absolute;top:50%;width:7px;height:7px;border-radius:50%;background:#18311d;box-shadow:0 0 0 2px #f4f7ee;transform:translate(-50%,-50%)}
+/* Sugar/Sodium/Sat fat are "low is good" — a low position on the track (left) is the green
+   end. Fiber/Protein are the opposite: "high is good", so a LOW amount (e.g. 0g fiber) sits at
+   the low end of the SAME track but that's the bad end for this nutrient, not the good one.
+   Without this, a food completely lacking fiber landed its dot on the green segment of a
+   fixed green→red gradient, reading as "good" when it's actually the worst case. Reversing the
+   gradient for highIsGood nutrients keeps the dot's color always meaning the same thing:
+   green = good amount of THIS nutrient, red = bad amount of THIS nutrient. */
+.range-bar.range-bar-reverse{background:linear-gradient(90deg,#e2895f,#e8c765,#7fc768)}
 
 /* Score breakdown: Yuka publishes its food score as three weighted parts (nutrition 60%,
    additives 30%, organic bonus 10%) — same shape shown here, built from our own Nutri-Score
@@ -258,6 +296,17 @@ header{padding-top:50px}
 .history-row-text b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f7faef}
 .history-row-text span{display:block;font-size:11px;color:#a8b8a3;margin-top:2px}
 .history-grade{flex:none;width:28px;height:28px;border-radius:50%;background:#baff59;color:#143c1f;display:grid;place-items:center;font-size:12px;font-style:normal;font-weight:700}
+/* Full 5-tier grade coloring — every grade circle in the app (the big score ring, history
+   rows, browse/top grid tiles, and Better Swap badges) now reads its color from the actual
+   letter grade instead of defaulting to a flat green regardless of how poor the grade is.
+   Qualified with the element class (`.score-ring.grade-a`, not just `.grade-a`) so this beats
+   the base one-class rules (`.history-grade{background:#baff59}` above, and globals.css's
+   `.grade-c,.grade-d,.grade-e{...}`) on specificity alone, independent of file/rule order. */
+.score-ring.grade-a,.history-grade.grade-a,.swap-grade.grade-a{background:#5fae4a;color:#fff}
+.score-ring.grade-b,.history-grade.grade-b,.swap-grade.grade-b{background:#9ecf52;color:#153d1f}
+.score-ring.grade-c,.history-grade.grade-c,.swap-grade.grade-c{background:#dfb043;color:#153d1f}
+.score-ring.grade-d,.history-grade.grade-d,.swap-grade.grade-d{background:#dd8a3d;color:#fff}
+.score-ring.grade-e,.history-grade.grade-e,.swap-grade.grade-e{background:#cf5540;color:#fff}
 .history-delete{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#8fa38b;display:grid;place-items:center;cursor:pointer;transition:background .15s ease,color .15s ease}
 .history-delete:hover{background:#ffffff14;color:#ffb3a0}
 
@@ -314,25 +363,18 @@ header{padding-top:50px}
 
 /* Persistent bottom navigation — History / Recs / Scan / Top / Search — sits above every
    screen (camera view and every full-page tab alike) so switching sections never needs a trip
-   back through "Scan" first. Scan is a raised circular button poking up through a gap in the
-   bar (distinct from a flat five-in-a-row strip), now with its own icon — Aperture, not the
-   ScanLine/Camera glyphs already used for the shutter and the barcode mode button — so it
-   reads as its own thing rather than a second copy of the shutter sitting right above it. */
+   back through "Scan" first. Flat five-in-a-row strip, every tab equal weight (icon + label),
+   matching the reference app's own nav rather than a raised/distinct Scan button. */
 .tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:36;display:flex;align-items:stretch;gap:2px;padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);background:#0a1912d6;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #ffffff14}
-.tab-bar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:12px;color:#8fa38b;font:600 10.5px "DM Sans";padding:7px 2px;cursor:pointer;transition:color .18s ease,background .18s ease}
+.tab-bar button{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:12px;color:#8fa38b;font:600 10.5px "DM Sans";padding:7px 2px;cursor:pointer;transition:color .18s ease,background .18s ease}
 .tab-bar>button svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.tab-bar>button.active{color:#baff59;background:#ffffff0f}
+.tab-bar>button.active{color:#baff59}
 .tab-bar>button.active svg{transform:translateY(-1px) scale(1.08)}
 .tab-bar>button:active{transform:scale(.94)}
-.tab-scan-spacer{flex:1}
-/* Qualified as `.tab-bar button.tab-scan-fab` (not just `.tab-scan-fab`) to out-specificity
-   the generic `.tab-bar button` rule above — a bare class selector alone loses that fight to a
-   class+type descendant selector and silently gets its flex/display/padding overridden back
-   to a flat rectangle. */
-.tab-bar button.tab-scan-fab{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:66px;height:66px;flex:none;border-radius:50%;background:#baff59;color:#153d1f;border:5px solid #0a1912;box-shadow:0 8px 22px #06150dcc,0 0 0 1px #baff5933;display:grid;place-items:center;padding:0;cursor:pointer;transition:transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .22s ease}
-.tab-bar button.tab-scan-fab:active{transform:translateX(-50%) scale(.92)}
-.tab-bar button.tab-scan-fab.active{box-shadow:0 8px 26px #baff5966,0 0 0 1px #baff5966}
-.tab-bar button.tab-scan-fab.active svg{transform:scale(1.08) rotate(8deg)}
+/* The active tab's highlight pill: its left/width are set from JS (the actual measured
+   offsetLeft/offsetWidth of the active button), so it can transition smoothly between
+   positions of different widths instead of the background just jumping between buttons. */
+.tab-bar-indicator{position:absolute;top:9px;bottom:calc(env(safe-area-inset-bottom,0px) + 9px);border-radius:12px;background:#ffffff0f;z-index:0;pointer-events:none;transition:left .34s cubic-bezier(.34,1.1,.64,1),width .34s cubic-bezier(.34,1.1,.64,1)}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes
    past ~70% of the track width, springing back to the start otherwise. A single flat pill —

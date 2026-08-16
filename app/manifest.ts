@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "NutriLens",
-    short_name: "NutriLens",
+    name: "Nura",
+    short_name: "Nura",
     description: "Scan food photos or barcodes and get instant nutrition and health-score insights.",
     start_url: "/",
     display: "standalone",

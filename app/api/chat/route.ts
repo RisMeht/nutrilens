@@ -4,7 +4,7 @@ import { resolveModel } from "../../../lib/ai-model";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = (context: unknown) => `You are NutriLens AI, answering a user's question about ONE specific food they just scanned in the app.
+const system = (context: unknown) => `You are Nura AI, answering a user's question about ONE specific food they just scanned in the app.
 Ground every answer in the JSON context below — cite its actual numbers when relevant, and if something is asked that the context doesn't cover, say so honestly instead of guessing or inventing facts.
 Keep answers conversational and concise (2-4 sentences unless the question genuinely needs a longer breakdown). General nutrition information only — never a medical diagnosis or personalized medical advice.
 Context for this scan:
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      "X-Title": "NutriLens"
+      "X-Title": "Nura"
     },
     body: JSON.stringify({
       model,

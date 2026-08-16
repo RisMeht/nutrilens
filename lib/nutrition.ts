@@ -128,7 +128,7 @@ export const buildHealthScore = ({
 };
 
 export type RangeBucket = "low" | "moderate" | "high";
-export type NutrientRangeInfo = { bucket: RangeBucket; positionPct: number; good: boolean; bad: boolean };
+export type NutrientRangeInfo = { bucket: RangeBucket; positionPct: number; good: boolean; bad: boolean; highIsGood: boolean };
 
 type RangeKey = "sugar" | "sodiumMg" | "satFat" | "fiber" | "protein";
 const RANGE_CONFIG: Record<RangeKey, { thresholds: number[]; goodDirection: "low" | "high" }> = {
@@ -154,7 +154,7 @@ export const nutrientRange = (key: RangeKey, value: number, scale = 1): Nutrient
   const bucket: RangeBucket = value <= lowMax ? "low" : value >= highMin ? "high" : "moderate";
   const good = goodDirection === "low" ? bucket === "low" : bucket === "high";
   const bad = goodDirection === "low" ? bucket === "high" : bucket === "low";
-  return { bucket, positionPct, good, bad };
+  return { bucket, positionPct, good, bad, highIsGood: goodDirection === "high" };
 };
 
 // Yuka publishes its scoring as three weighted parts — nutritional quality (Nutri-Score

@@ -18,7 +18,7 @@ import { resolveModel } from "../../../../lib/ai-model";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = `You are NutriLens AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
+const system = `You are Nura AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
 {"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","score":number,"nutritionScore":number,"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}
 Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific product, then let the score follow from that.
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      "X-Title": "NutriLens"
+      "X-Title": "Nura"
     },
     body: JSON.stringify({
       model,
