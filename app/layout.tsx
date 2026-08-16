@@ -10,13 +10,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07150d",
-  // Without this, the browser never reports non-zero env(safe-area-inset-*) values, so every
-  // safe-area padding already added (tab bar, full-page headers, chat input) was silently a
-  // no-op — most visible once installed as a standalone PWA (no browser chrome of its own to
-  // absorb the notch/home-indicator area), but this also enables genuine edge-to-edge
-  // rendering in a regular browser tab, matching the full-screen camera UI's own intent.
-  viewportFit: "cover"
+  themeColor: "#07150d"
+  // Deliberately NOT setting viewportFit:"cover" — tried it to make env(safe-area-inset-*)
+  // report real values instead of always 0, but combining it with 100vh/100svh-based layout is
+  // a well-documented source of exactly the bug that showed up on a real device afterward: the
+  // installed standalone PWA rendered with extra blank space at the bottom and everything
+  // shifted up, because iOS's "cover" viewport and its dynamic-toolbar viewport height
+  // calculation don't agree on where the bottom of the screen actually is. Reverted — the
+  // safe-area paddings already in the CSS just fall back to their plain pixel values again
+  // (same as before this was ever tried), which is the known-good state.
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -8,12 +8,14 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .help,.gallery,.flip{-webkit-backdrop-filter:blur(7px)}
 .result-sheet{-webkit-backdrop-filter:blur(10px)}
 
-/* Enabling viewport-fit=cover (see layout.tsx) lets content render under a device's notch/
-   Dynamic Island — previously harmless since safe-area-inset-top was always 0 without it, but
-   now needs accounting for so the wordmark/help button don't end up too close to (or under)
-   it. Adds to the existing fixed padding rather than replacing it, so non-notched
-   devices (inset 0) are completely unaffected. */
-header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
+/* Installed as a standalone PWA (statusBarStyle:"black-translucent" in layout.tsx), iOS draws
+   its status bar as an overlay on top of the page rather than pushing content down for it — so
+   the header needs its own real clearance regardless of viewport height. env(safe-area-inset-*)
+   would be the precise way to detect that, but it requires viewport-fit=cover, which turned out
+   to fight with 100vh/100svh badly enough on a real device to break the footer layout entirely
+   (reverted in layout.tsx). A generous fixed padding is the less elegant but safe fallback:
+   works identically whether or not the browser ever reports real inset values. */
+header{padding-top:50px}
 .home-header{justify-content:flex-end}
 /* The title block and the "Scan food" card previously each had their own hand-picked
    top:X% position — on any viewport where the actual rendered heights didn't match the
@@ -28,7 +30,7 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
 /* Leaves clearance above the persistent tab bar so the shutter row never sits underneath it. */
-.bottom-panel{background:transparent;border:0;padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 92px)}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}
+.bottom-panel{background:transparent;border:0;padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 110px)}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}
 /* Measured this live rather than eyeballing it: the header is a constant ~97px tall (fixed
    26px padding + a 45px button, no percentage involved) at every breakpoint, but "Tap to scan
    food"/"Hold barcode in frame" was positioned with a bare percentage (9-11% of viewport
@@ -36,7 +38,7 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
    actually measured -7.7px, a real overlap, not just a near-miss. max() keeps the percentage
    for extra breathing room on tall screens while guaranteeing a fixed floor that clears the
    header's real, non-percentage height on every device. */
-.top-copy{top:max(9%,112px);pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}
+.top-copy{top:max(9%,140px);pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}
 /* The base camera-shade held a FLAT, constant-opacity color from 0-16% of the screen height
    (CSS's two-position single-stop shorthand) before starting to fade — visually indistinguishable
    from a solid header-colored bar sitting on top of the camera feed, not a gradient at all. Same
@@ -88,7 +90,7 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
 .barcode-frame{--beam-amp:36px}
 .scan-beam{left:50%;transform:translateX(-50%)}
 @keyframes beam{0%,100%{transform:translateX(-50%) translateY(calc(-1 * var(--beam-amp)));opacity:.25}50%{transform:translateX(-50%) translateY(var(--beam-amp));opacity:1}}
-@media(max-width:600px){.home-main{top:88px;bottom:100px;gap:22px}.top-copy{top:max(11%,112px)}.focus-frame{top:46%;--beam-amp:50px}.camera-empty{top:46%}.barcode-frame{--beam-amp:16px}
+@media(max-width:600px){.home-main{top:88px;bottom:100px;gap:22px}.top-copy{top:max(11%,140px)}.focus-frame{top:46%;--beam-amp:50px}.camera-empty{top:46%}.barcode-frame{--beam-amp:16px}
   .focus-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),60px)}
   .focus-frame i:nth-child(2){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),60px)}
   .focus-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),-60px)}
@@ -104,8 +106,8 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
    phone — the frame's bottom corners can run straight into the mode-switch pill instead of
    clearing it. Pulling the frame further up specifically when height is tight (independent of
    width) keeps real clearance regardless of how much of the screen the browser itself is using. */
-@media(max-height:720px){.top-copy{top:max(6%,105px)}.focus-frame{top:38%}.camera-empty{top:38%}}
-@media(max-height:620px){.top-copy{top:max(4%,100px)}.focus-frame{top:34%}.camera-empty{top:34%}}
+@media(max-height:720px){header{padding-top:36px}.top-copy{top:max(6%,108px)}.focus-frame{top:38%}.camera-empty{top:38%}}
+@media(max-height:620px){header{padding-top:30px}.top-copy{top:max(4%,98px)}.focus-frame{top:34%}.camera-empty{top:34%}}
 /* The History/Search buttons flanking the mode-switch, plus its own button padding, were sized
    for desktop's extra breathing room — on a narrow phone (iPhone SE-width and up) that combined
    width ran past the screen edge. Tighter side-button size/gap and mode-switch padding keep the
@@ -312,23 +314,25 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 26px)}
 
 /* Persistent bottom navigation — History / Recs / Scan / Top / Search — sits above every
    screen (camera view and every full-page tab alike) so switching sections never needs a trip
-   back through "Scan" first.
-   Scan previously stood out as a raised circular button poking up above the bar — on the
-   camera screen itself that sat right underneath the big shutter button, reading as two
-   near-identical circular scan controls stacked on each other rather than one clear action,
-   and the raised shape ran into the button row above it on shorter screens. Scan is now a
-   normal in-row tab like the other four (no more redundant second "scan" affordance stacked
-   on the shutter), just with its own small filled icon badge so it's still visually distinct
-   within the row without floating above it. */
+   back through "Scan" first. Scan is a raised circular button poking up through a gap in the
+   bar (distinct from a flat five-in-a-row strip), now with its own icon — Aperture, not the
+   ScanLine/Camera glyphs already used for the shutter and the barcode mode button — so it
+   reads as its own thing rather than a second copy of the shutter sitting right above it. */
 .tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:36;display:flex;align-items:stretch;gap:2px;padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);background:#0a1912d6;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #ffffff14}
 .tab-bar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:12px;color:#8fa38b;font:600 10.5px "DM Sans";padding:7px 2px;cursor:pointer;transition:color .18s ease,background .18s ease}
 .tab-bar>button svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
 .tab-bar>button.active{color:#baff59;background:#ffffff0f}
 .tab-bar>button.active svg{transform:translateY(-1px) scale(1.08)}
 .tab-bar>button:active{transform:scale(.94)}
-.tab-scan-icon{width:26px;height:26px;border-radius:50%;background:#baff59;color:#153d1f;display:grid;place-items:center;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.tab-bar button.tab-scan.active .tab-scan-icon{transform:scale(1.1)}
-.tab-bar button.tab-scan.active{color:#baff59}
+.tab-scan-spacer{flex:1}
+/* Qualified as `.tab-bar button.tab-scan-fab` (not just `.tab-scan-fab`) to out-specificity
+   the generic `.tab-bar button` rule above — a bare class selector alone loses that fight to a
+   class+type descendant selector and silently gets its flex/display/padding overridden back
+   to a flat rectangle. */
+.tab-bar button.tab-scan-fab{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:66px;height:66px;flex:none;border-radius:50%;background:#baff59;color:#153d1f;border:5px solid #0a1912;box-shadow:0 8px 22px #06150dcc,0 0 0 1px #baff5933;display:grid;place-items:center;padding:0;cursor:pointer;transition:transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .22s ease}
+.tab-bar button.tab-scan-fab:active{transform:translateX(-50%) scale(.92)}
+.tab-bar button.tab-scan-fab.active{box-shadow:0 8px 26px #baff5966,0 0 0 1px #baff5966}
+.tab-bar button.tab-scan-fab.active svg{transform:scale(1.08) rotate(8deg)}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes
    past ~70% of the track width, springing back to the start otherwise. A single flat pill —

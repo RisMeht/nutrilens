@@ -3,7 +3,7 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { DecodeHintType } from "@zxing/library";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 type Alternative = { name: string; image?: string; code?: string };
@@ -356,9 +356,10 @@ export default function Home() {
   {!resultSheetOpen && <nav className="tab-bar">
     <button className={tab === "history" ? "active" : ""} onClick={() => openTab("history")}><HistoryIcon size={19} /><span>History</span></button>
     <button className={tab === "recs" ? "active" : ""} onClick={() => openTab("recs")}><Sparkles size={19} /><span>Recs</span></button>
-    <button className={`tab-scan${tab === "scan" ? " active" : ""}`} onClick={() => openTab("scan")}><span className="tab-scan-icon"><ScanLine size={17} /></span><span>Scan</span></button>
+    <div className="tab-scan-spacer" aria-hidden="true" />
     <button className={tab === "top" ? "active" : ""} onClick={() => openTab("top")}><TrendingUp size={19} /><span>Top</span></button>
     <button className={tab === "search" ? "active" : ""} onClick={() => openTab("search")}><Search size={19} /><span>Search</span></button>
+    <button className={`tab-scan-fab${tab === "scan" ? " active" : ""}`} onClick={() => openTab("scan")} aria-label="Scan"><Aperture size={26} /></button>
   </nav>}
   </main>;
 }
