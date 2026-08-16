@@ -22,16 +22,24 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
    (reverted in layout.tsx). A generous fixed padding is the less elegant but safe fallback:
    works identically whether or not the browser ever reports real inset values. */
 header{padding-top:50px}
-/* Home screen: a big centered logo/wordmark/tagline is the whole page — no separate scan-food
-   card, since swipe-to-scan is the sole entry point. Top bar only holds the help button. */
+/* Home screen: a big centered logo/wordmark/tagline plus the plate/grade hero card above it —
+   no separate scan-food card, since swipe-to-scan is the sole entry point. Top bar only holds
+   the help button. */
 .home-topbar{position:absolute;z-index:2;top:0;left:0;right:0;display:flex;align-items:center;justify-content:flex-end;padding:50px clamp(22px,5vw,40px) 0}
 /* Hand-picked top:X% positioning previously collided on short viewports — a flex column
    between the top bar and the swipe button centers the logo/wordmark regardless of height. */
-.home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.home-logo{width:96px;height:96px;border-radius:26px;display:block;margin:0 auto 22px;box-shadow:0 10px 26px #06150d80}
+.home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(20px,4vh,34px)}
+.home-hero{position:relative;width:min(190px,44vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 24px 55px #06150d90,inset 0 0 0 1px #ffffff14}
+.home-hero-emoji{font-size:clamp(44px,11vw,64px);filter:drop-shadow(0 0 30px #baff5966)}
+.home-hero-chip{position:absolute;left:-14%;bottom:6%;display:flex;align-items:center;gap:9px;background:#112016ee;border:1px solid #ffffff1c;border-radius:15px;padding:8px 14px 8px 8px;box-shadow:0 12px 26px #06150dcc;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
+.home-hero-chip-ring{flex:none;width:30px;height:30px;border-radius:50%;background:#5fae4a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
+.home-hero-chip-text{display:grid;line-height:1.15}
+.home-hero-chip-text b{font-size:15px;color:#f4fbee}
+.home-hero-chip-text small{font-size:9px;color:#a8b8a3;text-transform:uppercase;letter-spacing:.06em}
+.home-logo{width:76px;height:76px;border-radius:22px;display:block;margin:0 auto 18px;box-shadow:0 10px 26px #06150d80}
 .home-copy{position:static;left:auto;transform:none;width:min(760px,calc(100% - 40px));text-align:center}
-.home-copy h1{font-size:clamp(56px,11vw,92px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0;color:#f7faef}
-.home-copy>span{display:block;margin-top:16px;color:#c5d1c0;font-size:16px}
+.home-copy h1{font-size:clamp(44px,9vw,74px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0;color:#f7faef}
+.home-copy>span{display:block;margin-top:14px;color:#c5d1c0;font-size:16px}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
 /* Leaves clearance above the persistent tab bar so the shutter row never sits underneath it. */
 .bottom-panel{background:transparent;border:0;padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 110px)}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}
@@ -105,7 +113,7 @@ header{padding-top:50px}
    confirmation the shot registered, then hands off to the spinner — rather than looping the
    beam for the whole AI request, which made people keep the camera pointed at the food the
    entire time for no reason once the photo was already captured. */
-.scan-beam-once{animation:beam .7s ease-in-out 1 both}
+.scan-beam-once{animation:beam 1.7s ease-in-out 1 both}
 @media(max-width:600px){.home-main{top:88px;bottom:100px;gap:22px}.top-copy{top:max(11%,140px)}.focus-frame{top:46%;--beam-amp:50px}.camera-empty{top:46%}.barcode-frame{--beam-amp:16px}
   .focus-frame i:nth-child(1){transform:translate(calc((600px - clamp(285px,58vw,570px)) / 2),60px)}
   .focus-frame i:nth-child(2){transform:translate(calc((clamp(285px,58vw,570px) - 600px) / 2),60px)}
@@ -330,11 +338,11 @@ header{padding-top:50px}
    Qualified with the element class (`.score-ring.grade-a`, not just `.grade-a`) so this beats
    the base one-class rules (`.history-grade{background:#baff59}` above, and globals.css's
    `.grade-c,.grade-d,.grade-e{...}`) on specificity alone, independent of file/rule order. */
-.score-ring.grade-a,.history-grade.grade-a,.swap-grade.grade-a{background:#5fae4a;color:#fff}
-.score-ring.grade-b,.history-grade.grade-b,.swap-grade.grade-b{background:#9ecf52;color:#153d1f}
-.score-ring.grade-c,.history-grade.grade-c,.swap-grade.grade-c{background:#dfb043;color:#153d1f}
-.score-ring.grade-d,.history-grade.grade-d,.swap-grade.grade-d{background:#dd8a3d;color:#fff}
-.score-ring.grade-e,.history-grade.grade-e,.swap-grade.grade-e{background:#cf5540;color:#fff}
+.score-ring.grade-a,.history-grade.grade-a,.swap-grade.grade-a,.home-hero-chip-ring.grade-a{background:#5fae4a;color:#fff}
+.score-ring.grade-b,.history-grade.grade-b,.swap-grade.grade-b,.home-hero-chip-ring.grade-b{background:#9ecf52;color:#153d1f}
+.score-ring.grade-c,.history-grade.grade-c,.swap-grade.grade-c,.home-hero-chip-ring.grade-c{background:#dfb043;color:#153d1f}
+.score-ring.grade-d,.history-grade.grade-d,.swap-grade.grade-d,.home-hero-chip-ring.grade-d{background:#dd8a3d;color:#fff}
+.score-ring.grade-e,.history-grade.grade-e,.swap-grade.grade-e,.home-hero-chip-ring.grade-e{background:#cf5540;color:#fff}
 .history-delete{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#8fa38b;display:grid;place-items:center;cursor:pointer;transition:background .15s ease,color .15s ease}
 .history-delete:hover{background:#ffffff14;color:#ffb3a0}
 

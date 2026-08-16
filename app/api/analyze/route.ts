@@ -6,7 +6,7 @@ import { resolveModel } from "../../../lib/ai-model";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = `You are Nura, a careful nutrition assistant.
+const system = `You are Viva, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
 {"visible":boolean,"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
 Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific food, then let the score follow from that.
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      "X-Title": "Nura"
+      "X-Title": "Viva"
     },
     body: JSON.stringify({
       model,

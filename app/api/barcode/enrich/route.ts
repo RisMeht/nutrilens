@@ -15,7 +15,7 @@ import { resolveModel } from "../../../../lib/ai-model";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const system = `You are Nura AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
+const system = `You are Viva AI, a nutrition expert interpreting one packaged food's nutrition and ingredient facts.
 Return ONLY valid JSON with this exact shape:
 {"summary":"string","highlights":["string","string","string"],"concerns":["string","string"],"alternatives":["string","string"],"caution":"string","additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}
 The 0-100 score and letter grade are computed deterministically from nutrients_per_100g elsewhere — do not include them here; focus entirely on the qualitative read (summary/highlights/concerns/alternatives) and on actually reading ingredients_text for additives.
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       Authorization: "Bearer " + key,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      "X-Title": "Nura"
+      "X-Title": "Viva"
     },
     body: JSON.stringify({
       model,

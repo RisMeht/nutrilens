@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Nura",
-    short_name: "Nura",
+    name: "Viva",
+    short_name: "Viva",
     description: "Scan food photos or barcodes and get instant nutrition and health-score insights.",
     start_url: "/",
     display: "standalone",

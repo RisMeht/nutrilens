@@ -3,10 +3,10 @@ import "./globals.css";
 import "./overrides.css";
 
 export const metadata: Metadata = {
-  title: "Nura — Know what you eat",
+  title: "Viva — Know what you eat",
   description: "Scan food photos or barcodes and get serving-based nutrition insights from trusted product data.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { title: "Nura", statusBarStyle: "black-translucent" }
+  appleWebApp: { title: "Viva", statusBarStyle: "black-translucent" }
 };
 
 export const viewport: Viewport = {
