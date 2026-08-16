@@ -75,6 +75,11 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
   .barcode-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),-120px)}
   .barcode-frame i:nth-child(4){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),-120px)}
 }
+/* The History/Search buttons flanking the mode-switch, plus its own button padding, were sized
+   for desktop's extra breathing room — on a narrow phone (iPhone SE-width and up) that combined
+   width ran past the screen edge. Tighter side-button size/gap and mode-switch padding keep the
+   whole row comfortably inside even the narrowest common viewport. */
+@media(max-width:400px){.mode-row{gap:8px}.mode-side-btn{width:38px;height:38px}.mode-switch button{padding:10px 18px}}
 
 .sheet-card{animation:sheet-in .28s cubic-bezier(.2,.8,.2,1);overflow:visible}.result-content{max-height:88svh;overflow:auto;border-radius:28px;padding-top:0}.close-sheet{z-index:4;transition:transform .18s ease,background .18s ease}.close-sheet:hover{transform:rotate(90deg) scale(1.08);background:#cce0c7}.help,.gallery,.flip,.mode-switch button,.shutter{transition:transform .18s ease,filter .18s ease}.help:hover,.gallery:hover,.flip:hover,.help:active,.gallery:active,.flip:active{transform:translateY(-2px);filter:brightness(1.2)}.mode-switch button:hover,.mode-switch button:active{filter:brightness(1.16)}.shutter:active{transform:scale(.92)}.help-backdrop{position:fixed;inset:0;z-index:30;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}.alternatives-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:10px}.alternatives-grid article{background:#dff2d8;border-radius:12px;overflow:hidden}.alternatives-grid img{display:block;width:100%;height:110px;object-fit:cover}.alternatives-grid span{display:block;padding:8px 9px;font-size:12px;color:#285a2d}@keyframes sheet-in{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}@media(max-width:600px){.alternatives-grid img{height:92px}}
 
@@ -170,40 +175,53 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
    different content, so tapping an additive feels like the same app rather than a new pattern. */
 .additive-detail-card h2{font-size:22px}
 
-/* History / Browse full-height panels reuse the Help dialog's own card+backdrop+animation
-   pattern (same feel across the app), just taller and with an internal scroll region instead
-   of the Help card's short fixed content.
-   Note: globals.css' `.help-card button{position:absolute;right:15px;top:15px;width:34px;
-   height:34px;display:grid}` is a bare tag selector written for that dialog's ONE button (its
-   close X) — every button these two panels add is also a `.help-card button` and was
-   inheriting that same absolute top-right position/size, stacking every chip/row/tile exactly
-   on top of the close icon. Each selector below is qualified with `.page-card` (two classes)
-   specifically so it outranks that single-class+tag rule regardless of source order. */
-.page-card{width:min(460px,100%);height:min(600px,82svh);display:flex;flex-direction:column;padding-bottom:20px}
-.page-card h2{flex:none}
-.page-card .page-clear{flex:none;display:flex;align-items:center;gap:6px;position:absolute;right:56px;top:22px;width:auto;height:auto;border:0;background:#eef4ea;color:#3c5240;font:600 12px "DM Sans";padding:8px 12px;border-radius:999px;cursor:pointer}
-.page-empty{color:#61735e;font-size:14px;text-align:center;margin-top:40px}
-.history-list,.browse-list{flex:1;overflow:auto;margin:6px -8px 0;padding:0 8px;display:flex;flex-direction:column;gap:8px}
+/* History / Browse are real full-screen pages (position:fixed, no centered card) rather than a
+   small dialog. Root cause of the earlier "cut off on iPhone" bug: a centered flex/grid card
+   sized with width:min(Npx,100%) doesn't reliably cap at the viewport width once a CHILD needs
+   more room than that (an unwrapped row of category chips, here) — the browser sizes the outer
+   auto grid/flex track to the child's own max-content first, a percentage width on the child
+   can't override that after the fact, and the "100%" half of min() silently loses. A fixed
+   full-screen page has no such outer track to mis-size — the page simply IS the viewport, so
+   nothing can make it wider than the screen. Also gives these two their own real navigation
+   (back button, full-height content) instead of feeling like a popup over the scan screen. */
+.full-page{position:fixed;inset:0;z-index:32;background:#f4f7ee;color:#18311d;display:flex;flex-direction:column;animation:page-in .28s cubic-bezier(.2,.8,.2,1) both}
+.full-page.closing{animation:page-out .22s ease forwards}
+.full-page-header{flex:none;display:flex;align-items:center;gap:14px;padding:calc(env(safe-area-inset-top,0px) + 20px) 20px 16px;border-bottom:1px solid #e0e9db}
+.full-page-back{flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#eef4ea;color:#234d29;display:grid;place-items:center;cursor:pointer;transition:background .15s ease}
+.full-page-back:hover{background:#dce7d8}
+.full-page-header h2{flex:1;min-width:0;margin:0;font-size:21px;letter-spacing:-.03em}
+.full-page-content{flex:1;overflow:auto;padding:18px 20px calc(env(safe-area-inset-bottom,0px) + 28px);-webkit-overflow-scrolling:touch}
+/* Every other screen in the app (camera view, result sheet) reads full-bleed on a wide desktop
+   window because its OWN content centers/caps itself rather than the outer shell narrowing —
+   same idea here: the scroll area stays edge-to-edge, but each of its children caps out and
+   centers past phone width instead of a single-column list stretching across a 1200px+ window. */
+.full-page-content>*{max-width:640px;margin-left:auto;margin-right:auto}
+.page-clear{margin-left:auto}
+@keyframes page-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes page-out{to{opacity:0;transform:translateY(18px)}}
+
+.page-clear{flex:none;display:flex;align-items:center;gap:6px;border:0;background:#eef4ea;color:#3c5240;font:600 12px "DM Sans";padding:8px 12px;border-radius:999px;cursor:pointer}
+.page-empty{color:#61735e;font-size:14px;text-align:center;margin-top:40px;line-height:1.5}
+.history-list{display:flex;flex-direction:column;gap:8px}
 .history-row{display:flex;align-items:center;gap:6px}
-.page-card .history-row-main{position:static;flex:1;min-width:0;width:auto;height:auto;display:flex;align-items:center;gap:12px;background:#eef4ea;border:0;border-radius:12px;padding:8px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#eef4ea;border:0;border-radius:12px;padding:8px;cursor:pointer;text-align:left;font:inherit;color:inherit}
 .history-row-main img{width:44px;height:44px;border-radius:9px;object-fit:cover;flex:none;background:#d5e0d0}
 .history-row-text{flex:1;min-width:0}
 .history-row-text b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .history-row-text span{display:block;font-size:11px;color:#7c8c78;margin-top:2px}
 .history-grade{flex:none;width:28px;height:28px;border-radius:50%;background:#baff59;color:#143c1f;display:grid;place-items:center;font-size:12px;font-style:normal;font-weight:700}
-.page-card .history-delete{position:static;flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#9caa98;display:grid;place-items:center;cursor:pointer}
+.history-delete{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#9caa98;display:grid;place-items:center;cursor:pointer}
 .history-delete:hover{background:#eef4ea;color:#6d3022}
 
-/* Browse/search screen: text search + category chips above a photo grid, sharing the same
-   page-card shell as History. */
-.browse-search{flex:none;display:flex;align-items:center;gap:10px;background:#eef4ea;border-radius:12px;padding:11px 14px;margin-top:4px;color:#7c8c78}
-.browse-search input{flex:1;border:0;background:transparent;outline:0;font:500 14px "DM Sans";color:#18311d}
-.browse-chips{flex:none;display:flex;gap:8px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px}
-.page-card .browse-chips button{position:static;flex:none;width:auto;height:auto;border:0;background:#eef4ea;color:#3c5240;font:600 12.5px "DM Sans";padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;transition:background .15s ease,color .15s ease}
-.page-card .browse-chips button.selected{background:#234d29;color:#eaffdd}
-.browse-loading{flex:none;display:grid;place-items:center;padding:30px 0;color:#4d863e}
-.browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
-.page-card .browse-tile{position:relative;width:auto;height:auto;border:0;background:#eef4ea;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:7px;text-align:left;font:inherit;color:inherit;cursor:pointer}
+/* Browse/search screen: text search + category chips above a photo grid. */
+.browse-search{display:flex;align-items:center;gap:10px;background:#eef4ea;border-radius:12px;padding:11px 14px;color:#7c8c78}
+.browse-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:500 14px "DM Sans";color:#18311d}
+.browse-chips{display:flex;gap:8px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px}
+.browse-chips button{flex:none;border:0;background:#eef4ea;color:#3c5240;font:600 12.5px "DM Sans";padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;transition:background .15s ease,color .15s ease}
+.browse-chips button.selected{background:#234d29;color:#eaffdd}
+.browse-loading{display:grid;place-items:center;padding:30px 0;color:#4d863e}
+.browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:14px}
+.browse-tile{position:relative;border:0;background:#eef4ea;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:7px;text-align:left;font:inherit;color:inherit;cursor:pointer}
 .browse-tile:disabled{cursor:default}
 .browse-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:9px;overflow:hidden;background:#d5e0d0}
 .browse-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
@@ -219,6 +237,13 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .header-actions{display:flex;align-items:center;gap:10px}
 .torch{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:background .18s ease,color .18s ease}
 .torch.on{background:#baff59;color:#153d1f}
+
+/* History/Search live right next to the Food/Barcode switch (not the top header) — the same
+   circular icon language as the gallery/flip buttons in the row below, flanking the pill so
+   every scan-related destination sits in one place. */
+.mode-row{display:flex;align-items:center;justify-content:center;gap:12px}
+.mode-side-btn{flex:none;width:42px;height:42px;border-radius:50%;border:0;background:#142d1cce;color:#eff8e8;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:transform .18s ease,filter .18s ease}
+.mode-side-btn:hover,.mode-side-btn:active{transform:translateY(-2px);filter:brightness(1.2)}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes
    past ~70% of the track width, springing back to the start otherwise. A single flat pill —
