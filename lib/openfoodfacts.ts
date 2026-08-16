@@ -80,7 +80,7 @@ export const findBetterSwaps = async ({
   searchUrl.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,categories_tags,nutriments");
 
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
-  if (!response?.ok) return [] as Array<{ name: string; image: string }>;
+  if (!response?.ok) return [] as Array<{ name: string; image: string; code: string }>;
   const data = await response.json();
   const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
 
@@ -110,12 +110,12 @@ export const findBetterSwaps = async ({
         overlapScore;
 
       const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "Healthier option";
-      return { name, image, improvement };
+      return { name, image, code, improvement };
     })
-    .filter((item): item is { name: string; image: string; improvement: number } => Boolean(item && item.improvement > 1.5))
+    .filter((item): item is { name: string; image: string; code: string; improvement: number } => Boolean(item && item.improvement > 1.5))
     .sort((a, b) => b.improvement - a.improvement)
     .slice(0, 4)
-    .map(({ name, image }) => ({ name, image }));
+    .map(({ name, image, code }) => ({ name, image, code }));
 };
 
 // Free, no-key, legally-clear real photos for generic/home foods that Open Food Facts (mostly
@@ -149,7 +149,7 @@ export const wikimediaImageFor = async (query: string): Promise<string> => {
 };
 
 export const enrichAlternativesWithImages = async (alternatives: unknown) => {
-  if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string }>;
+  if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string; code?: string }>;
   const names = alternatives
     .map((entry) => {
       if (typeof entry === "string") return entry.trim();
@@ -166,7 +166,7 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
       searchUrl.searchParams.set("q", name);
       searchUrl.searchParams.set("page_size", "3");
-      searchUrl.searchParams.set("fields", "product_name,product_name_en,image_front_small_url,image_front_url");
+      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
@@ -179,10 +179,13 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
           (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
           ""
         : "";
-      if (rawOffImage) return { name, image: toFullSizeImage(rawOffImage) };
+      // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
+      // real full result later (Recommendations) rather than just shown as a static image.
+      const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
+      if (rawOffImage) return { name, image: toFullSizeImage(rawOffImage), code };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
-      return { name, image: wikiImage };
+      return { name, image: wikiImage, code };
     })
   );
 
@@ -193,18 +196,20 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
 export type BrowseItem = { code: string; name: string; image: string; grade: string };
 
-// Backs the Browse/search screen — a free-text search hits Open Food Facts directly (any
-// packaged product in their database, not just what the user has personally scanned), and a
-// category browse sorts by Nutri-Score so genuinely well-rated products surface first, the
-// closest equivalent to Yuka's own curated "top foods" without access to their proprietary rankings.
+// Backs the Browse/search/Top screens — a free-text search hits Open Food Facts directly (any
+// packaged product in their database, not just what the user has personally scanned), sorted
+// best-rated-first same as a category browse, so genuinely well-rated products surface first
+// throughout. Category filtering has to go through `q` as a quoted field query
+// (`categories_tags:"en:snacks"`) — a plain `categories_tags` URL param is silently ignored by
+// this API (confirmed: it returned identical unfiltered results for every category tried).
 export const browseProducts = async ({ query, category }: { query?: string; category?: string }): Promise<BrowseItem[]> => {
   const url = new URL(`${OFF_SEARCH_BASE}/search`);
   if (query) {
     url.searchParams.set("q", query);
   } else if (category) {
-    url.searchParams.set("categories_tags", category);
-    url.searchParams.set("sort_by", "nutriscore_score");
+    url.searchParams.set("q", `categories_tags:"${category}"`);
   }
+  url.searchParams.set("sort_by", "nutriscore_score");
   url.searchParams.set("page_size", "24");
   url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url");
 

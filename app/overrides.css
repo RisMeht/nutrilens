@@ -21,7 +21,8 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .home-card-icon{flex:none;width:76px;height:76px;border-radius:20px;background:#1c331f;display:grid;place-items:center;font-size:38px;box-shadow:inset 0 0 0 1px #ffffff17}
 .home-card-text{display:grid;gap:4px}.home-card-text strong{font-size:23px;color:#f4fbee}.home-card-text span{font-size:13px;color:#bdcbb9}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
-.bottom-panel{background:transparent;border:0;padding:14px 20px 20px}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}
+/* Leaves clearance above the persistent tab bar so the shutter row never sits underneath it. */
+.bottom-panel{background:transparent;border:0;padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 92px)}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}.top-copy{top:9%;pointer-events:none}.top-copy h1{font-size:clamp(15px,2vw,20px);letter-spacing:.01em;margin:0;text-shadow:0 2px 12px #000;font-weight:600;animation:text-fade .3s ease both}.top-copy p,.top-copy span{display:none}
 /* The base camera-shade held a FLAT, constant-opacity color from 0-16% of the screen height
    (CSS's two-position single-stop shorthand) before starting to fade — visually indistinguishable
    from a solid header-colored bar sitting on top of the camera feed, not a gradient at all. Same
@@ -105,6 +106,14 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .camera-empty{z-index:3}
 .scan-progress-icon{color:#baff59;filter:drop-shadow(0 3px 10px #06150dcc)}
 .scan-beam{transition:opacity .25s ease}
+/* The focus-frame's own box stays a constant tall envelope in every mode (only the corner
+   brackets move — see the frame-animation rules above), so the barcode frame's actual visual
+   gap between its corners is much shorter than the box that "Point, scan, understand" was sized
+   for — its full-size emoji plus text overflowed past the corners entirely, visually slicing
+   through them and the barcode scan-beam. Compact, mode-scoped sizing keeps it clear of both. */
+.mode-barcode .camera-empty{transform:translate(-50%,-50%)}
+.mode-barcode .food-glow{font-size:34px;filter:drop-shadow(0 0 18px #baff5966)}
+.mode-barcode .camera-empty p{font-size:14px;margin:4px 0 0}
 
 /* Result header: a full-width photo banner with the score ring badged over its bottom-right
    corner, title block below. Replaces a small inline thumbnail that left a large empty gap
@@ -175,59 +184,84 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
    different content, so tapping an additive feels like the same app rather than a new pattern. */
 .additive-detail-card h2{font-size:22px}
 
-/* History / Browse are real full-screen pages (position:fixed, no centered card) rather than a
-   small dialog. Root cause of the earlier "cut off on iPhone" bug: a centered flex/grid card
-   sized with width:min(Npx,100%) doesn't reliably cap at the viewport width once a CHILD needs
-   more room than that (an unwrapped row of category chips, here) — the browser sizes the outer
-   auto grid/flex track to the child's own max-content first, a percentage width on the child
-   can't override that after the fact, and the "100%" half of min() silently loses. A fixed
-   full-screen page has no such outer track to mis-size — the page simply IS the viewport, so
-   nothing can make it wider than the screen. Also gives these two their own real navigation
-   (back button, full-height content) instead of feeling like a popup over the scan screen. */
-.full-page{position:fixed;inset:0;z-index:32;background:#f4f7ee;color:#18311d;display:flex;flex-direction:column;animation:page-in .28s cubic-bezier(.2,.8,.2,1) both}
-.full-page.closing{animation:page-out .22s ease forwards}
-.full-page-header{flex:none;display:flex;align-items:center;gap:14px;padding:calc(env(safe-area-inset-top,0px) + 20px) 20px 16px;border-bottom:1px solid #e0e9db}
-.full-page-back{flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#eef4ea;color:#234d29;display:grid;place-items:center;cursor:pointer;transition:background .15s ease}
-.full-page-back:hover{background:#dce7d8}
-.full-page-header h2{flex:1;min-width:0;margin:0;font-size:21px;letter-spacing:-.03em}
-.full-page-content{flex:1;overflow:auto;padding:18px 20px calc(env(safe-area-inset-bottom,0px) + 28px);-webkit-overflow-scrolling:touch}
+/* History / Recs / Top / Search are real full-screen pages (position:fixed, no centered card)
+   rather than a small dialog. Root cause of the earlier "cut off on iPhone" bug: a centered
+   flex/grid card sized with width:min(Npx,100%) doesn't reliably cap at the viewport width once
+   a CHILD needs more room than that — the browser sizes the outer auto grid/flex track to the
+   child's own max-content first, a percentage width on the child can't override that after the
+   fact, and the "100%" half of min() silently loses. A fixed full-screen page has no such outer
+   track to mis-size. They share the same dark radial-gradient background as the camera/home
+   screens (rather than the light result-sheet card look) so switching tabs reads as one
+   consistent app, not a different product bolted on. */
+.full-page{position:fixed;inset:0;z-index:32;background:radial-gradient(circle at 50% 0%,#345c2c 0,#1a4022 35%,#0b2114 72%,#07150d);color:#f7faef;display:flex;flex-direction:column;animation:page-in .38s cubic-bezier(.16,.8,.24,1) both}
+.full-page.closing{animation:page-out .3s cubic-bezier(.4,0,1,1) forwards}
+.full-page-header{flex:none;display:flex;align-items:center;gap:14px;padding:calc(env(safe-area-inset-top,0px) + 20px) 20px 16px}
+.full-page-back{flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#142d1cce;color:#eff8e8;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:transform .18s ease,filter .18s ease}
+.full-page-back:hover{transform:translateY(-1px);filter:brightness(1.2)}
+.full-page-header h2{flex:1;min-width:0;margin:0;font-size:21px;letter-spacing:-.03em;color:#f7faef}
+.full-page-content{flex:1;overflow:auto;padding:6px 20px calc(env(safe-area-inset-bottom,0px) + 104px);-webkit-overflow-scrolling:touch}
 /* Every other screen in the app (camera view, result sheet) reads full-bleed on a wide desktop
    window because its OWN content centers/caps itself rather than the outer shell narrowing —
    same idea here: the scroll area stays edge-to-edge, but each of its children caps out and
    centers past phone width instead of a single-column list stretching across a 1200px+ window. */
 .full-page-content>*{max-width:640px;margin-left:auto;margin-right:auto}
-.page-clear{margin-left:auto}
-@keyframes page-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
-@keyframes page-out{to{opacity:0;transform:translateY(18px)}}
+@keyframes page-in{from{opacity:0;transform:translateY(26px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes page-out{to{opacity:0;transform:translateY(26px) scale(.98)}}
 
-.page-clear{flex:none;display:flex;align-items:center;gap:6px;border:0;background:#eef4ea;color:#3c5240;font:600 12px "DM Sans";padding:8px 12px;border-radius:999px;cursor:pointer}
-.page-empty{color:#61735e;font-size:14px;text-align:center;margin-top:40px;line-height:1.5}
-.history-list{display:flex;flex-direction:column;gap:8px}
+.page-clear{flex:none;margin-left:auto;display:flex;align-items:center;gap:6px;border:0;background:#142d1cce;color:#eaffdd;font:600 12px "DM Sans";padding:8px 12px;border-radius:999px;cursor:pointer;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:filter .15s ease}
+.page-clear:hover{filter:brightness(1.2)}
+.page-empty{color:#c5d1c0;font-size:14px;text-align:center;margin-top:60px;line-height:1.5}
+.history-list{display:flex;flex-direction:column;gap:8px;padding-top:12px}
 .history-row{display:flex;align-items:center;gap:6px}
-.history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#eef4ea;border:0;border-radius:12px;padding:8px;cursor:pointer;text-align:left;font:inherit;color:inherit}
-.history-row-main img{width:44px;height:44px;border-radius:9px;object-fit:cover;flex:none;background:#d5e0d0}
+.history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:9px;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:background .15s ease}
+.history-row-main:hover{background:#ffffff18}
+.history-row-main img{width:46px;height:46px;border-radius:10px;object-fit:cover;flex:none;background:#1c331f}
 .history-row-text{flex:1;min-width:0}
-.history-row-text b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.history-row-text span{display:block;font-size:11px;color:#7c8c78;margin-top:2px}
+.history-row-text b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f7faef}
+.history-row-text span{display:block;font-size:11px;color:#a8b8a3;margin-top:2px}
 .history-grade{flex:none;width:28px;height:28px;border-radius:50%;background:#baff59;color:#143c1f;display:grid;place-items:center;font-size:12px;font-style:normal;font-weight:700}
-.history-delete{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#9caa98;display:grid;place-items:center;cursor:pointer}
-.history-delete:hover{background:#eef4ea;color:#6d3022}
+.history-delete{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#8fa38b;display:grid;place-items:center;cursor:pointer;transition:background .15s ease,color .15s ease}
+.history-delete:hover{background:#ffffff14;color:#ffb3a0}
 
-/* Browse/search screen: text search + category chips above a photo grid. */
-.browse-search{display:flex;align-items:center;gap:10px;background:#eef4ea;border-radius:12px;padding:11px 14px;color:#7c8c78}
-.browse-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:500 14px "DM Sans";color:#18311d}
-.browse-chips{display:flex;gap:8px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px}
-.browse-chips button{flex:none;border:0;background:#eef4ea;color:#3c5240;font:600 12.5px "DM Sans";padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;transition:background .15s ease,color .15s ease}
-.browse-chips button.selected{background:#234d29;color:#eaffdd}
-.browse-loading{display:grid;place-items:center;padding:30px 0;color:#4d863e}
-.browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:14px}
-.browse-tile{position:relative;border:0;background:#eef4ea;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:7px;text-align:left;font:inherit;color:inherit;cursor:pointer}
+/* Search: text input above a photo grid. */
+.browse-search{display:flex;align-items:center;gap:10px;background:#ffffff12;border:1px solid #ffffff18;border-radius:14px;padding:13px 16px;color:#a8b8a3;margin-top:12px}
+.browse-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:500 15px "DM Sans";color:#f7faef}
+.browse-search input::placeholder{color:#8fa38b}
+.browse-loading{display:grid;place-items:center;padding:40px 0;color:#baff59}
+.browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:11px;margin-top:16px}
+.browse-tile{position:relative;border:1px solid #ffffff14;background:#ffffff0d;border-radius:14px;padding:9px;display:flex;flex-direction:column;gap:8px;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:background .15s ease,transform .15s ease}
+.browse-tile:hover{background:#ffffff16;transform:translateY(-2px)}
 .browse-tile:disabled{cursor:default}
-.browse-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:9px;overflow:hidden;background:#d5e0d0}
+.browse-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#1c331f}
 .browse-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
-.browse-tile-loading{position:absolute;inset:0;background:#06150d80;display:grid;place-items:center;color:#baff59}
-.browse-tile span{font-size:12px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.browse-tile .history-grade{position:absolute;right:6px;top:6px;width:22px;height:22px;font-size:10px;box-shadow:0 2px 6px #0006}
+.browse-tile-loading{position:absolute;inset:0;background:#06150d90;display:grid;place-items:center;color:#baff59}
+.browse-tile span{font-size:12.5px;line-height:1.3;color:#eaf3e3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.browse-tile .history-grade{position:absolute;right:7px;top:7px;width:23px;height:23px;font-size:10px;box-shadow:0 2px 6px #0007}
+
+/* Top: a tappable category list, matching the app's own list-row language, before drilling
+   into a category's photo grid (reuses .browse-grid/.browse-tile). */
+.category-list{display:flex;flex-direction:column;gap:6px;padding-top:12px}
+.category-row{display:flex;align-items:center;gap:14px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:14px 16px;cursor:pointer;font:inherit;color:#f7faef;transition:background .15s ease}
+.category-row:hover{background:#ffffff18}
+.category-emoji{font-size:22px;flex:none}
+.category-label{flex:1;font-size:14.5px;font-weight:600}
+.category-row svg{color:#8fa38b;flex:none}
+
+/* Recs: each row pairs a poor-scoring scan (red X) with its already-computed better swap
+   (green check), mirroring the bad/good product pairing pattern used throughout the app's own
+   risk-flag language (red/green), just applied at the product level instead of the ingredient level. */
+.recs-list{display:flex;flex-direction:column;gap:14px;padding-top:12px}
+.recs-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.recs-tile{border:1px solid #ffffff14;background:#ffffff0d;border-radius:14px;padding:9px;display:flex;flex-direction:column;gap:8px;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:background .15s ease,transform .15s ease}
+.recs-tile:hover{background:#ffffff16;transform:translateY(-2px)}
+.recs-tile:disabled{cursor:default}
+.recs-tile span{font-size:12.5px;line-height:1.3;color:#eaf3e3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.recs-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#1c331f}
+.recs-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
+.recs-badge{position:absolute;left:7px;top:7px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:13px;font-weight:700;box-shadow:0 2px 6px #0007}
+.recs-badge-bad{background:#cf5540;color:#fff}
+.recs-badge-good{background:#5fae4a;color:#fff}
+
 .risk-pill{display:inline-flex;align-items:center;gap:7px;background:#eef4ea;color:#3c5240;font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;margin-bottom:2px}
 .risk-pill .risk-dot{margin-top:0}
 .risk-pill.risk-red{background:#fbe9e5;color:#8c3a2b}
@@ -238,12 +272,15 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .torch{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:background .18s ease,color .18s ease}
 .torch.on{background:#baff59;color:#153d1f}
 
-/* History/Search live right next to the Food/Barcode switch (not the top header) — the same
-   circular icon language as the gallery/flip buttons in the row below, flanking the pill so
-   every scan-related destination sits in one place. */
-.mode-row{display:flex;align-items:center;justify-content:center;gap:12px}
-.mode-side-btn{flex:none;width:42px;height:42px;border-radius:50%;border:0;background:#142d1cce;color:#eff8e8;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:transform .18s ease,filter .18s ease}
-.mode-side-btn:hover,.mode-side-btn:active{transform:translateY(-2px);filter:brightness(1.2)}
+/* Persistent bottom navigation — History / Recs / Scan / Top / Search — sits above every
+   screen (camera view and every full-page tab alike) so switching sections never needs a trip
+   back through "Scan" first. Same glass-pill language as the mode-switch above it. */
+.tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:36;display:flex;justify-content:space-around;align-items:stretch;gap:2px;padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);background:#0a1912d6;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #ffffff14}
+.tab-bar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:12px;color:#8fa38b;font:600 10.5px "DM Sans";padding:7px 2px;cursor:pointer;transition:color .18s ease,background .18s ease}
+.tab-bar button svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.tab-bar button.active{color:#baff59;background:#ffffff0f}
+.tab-bar button.active svg{transform:translateY(-1px) scale(1.08)}
+.tab-bar button:active{transform:scale(.94)}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes
    past ~70% of the track width, springing back to the start otherwise. A single flat pill —
@@ -264,3 +301,46 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .home-screen.leaving{transform:translateX(-5%) scale(.97);opacity:0}
 .app-shell{animation:screen-in .5s cubic-bezier(.2,.8,.2,1) both;overflow-x:hidden}
 @keyframes screen-in{from{opacity:0;transform:translateX(4%)}to{opacity:1;transform:none}}
+
+/* Floating chat entry point on the result sheet — anchored to the card itself (not the page),
+   so it stays put in the corner regardless of scroll position, same trick already used for the
+   close button above it. */
+.chat-fab{position:absolute;right:18px;bottom:18px;z-index:4;width:52px;height:52px;border:0;border-radius:50%;background:#baff59;color:#153d1f;display:grid;place-items:center;cursor:pointer;box-shadow:0 8px 22px #06150d70;transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s ease}
+.chat-fab:hover{transform:scale(1.08);box-shadow:0 10px 26px #06150d90}
+.chat-fab:active{transform:scale(.94)}
+
+/* Chat panel: a slide-up sheet over the dark app background (not the result card's light
+   cream), matching every other non-scan screen — it feels like leaving the result to ask the
+   app a question, then returning to it. */
+.chat-backdrop{position:fixed;inset:0;z-index:38;background:#050f0acc;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;animation:fade-in .2s ease}
+.chat-backdrop.closing{animation:fade-out .22s ease forwards}
+.chat-panel{width:100%;max-height:78svh;display:flex;flex-direction:column;background:radial-gradient(circle at 50% 0%,#345c2c 0,#1a4022 35%,#0b2114 72%,#07150d);border-radius:26px 26px 0 0;box-shadow:0 -20px 60px #06150dcc;animation:chat-in .32s cubic-bezier(.2,.85,.25,1) both}
+.chat-panel.closing{animation:chat-out .24s cubic-bezier(.4,0,1,1) forwards}
+@keyframes chat-in{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes chat-out{to{transform:translateY(100%)}}
+.chat-header{flex:none;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px 20px 14px;border-bottom:1px solid #ffffff14}
+.chat-header strong{display:block;font-size:16px;color:#f7faef}
+.chat-header span{display:block;font-size:12.5px;color:#a8b8a3;margin-top:2px}
+.chat-header button{flex:none;width:34px;height:34px;border:0;border-radius:50%;background:#ffffff14;color:#eaf3e3;display:grid;place-items:center;cursor:pointer;transition:background .15s ease}
+.chat-header button:hover{background:#ffffff22}
+.chat-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+.chat-empty{margin:auto;text-align:center;color:#a8b8a3;display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 12px}
+.chat-empty svg{color:#baff59}
+.chat-empty p{margin:0;font-size:13.5px;line-height:1.5;max-width:280px}
+.chat-bubble{max-width:82%;padding:11px 14px;border-radius:16px;font-size:14px;line-height:1.45;animation:bubble-in .22s cubic-bezier(.2,.8,.2,1) both}
+@keyframes bubble-in{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
+.chat-user{align-self:flex-end;background:#baff59;color:#153d1f;border-bottom-right-radius:5px}
+.chat-assistant{align-self:flex-start;background:#ffffff14;color:#f2f8ed;border-bottom-left-radius:5px}
+.chat-typing{display:flex;gap:4px;align-items:center;padding:14px}
+.chat-typing span{width:6px;height:6px;border-radius:50%;background:#baff59;animation:typing-bounce 1.1s ease-in-out infinite}
+.chat-typing span:nth-child(2){animation-delay:.15s}
+.chat-typing span:nth-child(3){animation-delay:.3s}
+@keyframes typing-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+.chat-error{flex:none;margin:0 20px;padding:9px 12px;border-radius:10px;background:#4b211ee0;color:#ffe4de;font-size:12.5px}
+.chat-input-row{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.chat-input-row input{flex:1;min-width:0;border:1px solid #ffffff1c;background:#ffffff12;border-radius:999px;padding:12px 16px;font:500 14px "DM Sans";color:#f7faef;outline:0}
+.chat-input-row input::placeholder{color:#8fa38b}
+.chat-input-row input:disabled{opacity:.6}
+.chat-input-row button{flex:none;width:42px;height:42px;border:0;border-radius:50%;background:#baff59;color:#153d1f;display:grid;place-items:center;cursor:pointer;transition:transform .15s ease,opacity .15s ease}
+.chat-input-row button:disabled{opacity:.4;cursor:default}
+.chat-input-row button:not(:disabled):hover{transform:scale(1.08)}
