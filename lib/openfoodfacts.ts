@@ -32,15 +32,31 @@ export const fetchOpenFoodFactsProduct = async (code: string) => {
   return null;
 };
 
-// Open Food Facts serves each photo at a few fixed widths (100/200/400) via a numeric
-// filename suffix, plus one true full-resolution original at the same path with ".full"
-// instead — meaningfully sharper than the 400px version the API links to by default.
-const toFullSizeImage = (url: string): string => url.replace(/\.\d+\.(jpe?g|png)$/i, ".full.$1");
+// Open Food Facts serves each photo at a few fixed widths (100/200/400) via a numeric filename
+// suffix, plus one true full-resolution original at the same path with ".full" instead. The
+// full original is worth it for the one large hero photo on a result screen, but was also
+// being requested for every small grid/list tile (search results, "Better swaps", history rows
+// shown at ~120-150px) — multi-MB originals downloaded just to be shrunk by CSS, which is what
+// was making those grids feel slow to load. Grid/list tiles now request the 400px version
+// instead, plenty sharp at that display size and a fraction of the bytes.
+const toSizedImage = (url: string, size: number | "full"): string => url.replace(/\.\d+\.(jpe?g|png)$/i, `.${size}.$1`);
+const GRID_IMAGE_SIZE = 400;
 
 export const productImageUrl = (product: Record<string, unknown>): string => {
   const candidates = [product.image_front_url, product.image_url, product.image_front_small_url, product.image_small_url];
   const found = candidates.find((value): value is string => typeof value === "string" && value.length > 0);
-  return found ? toFullSizeImage(found) : "";
+  return found ? toSizedImage(found, "full") : "";
+};
+
+// A handful of category tags that mean "not actually a food product" — Open Food Facts'
+// database occasionally surfaces cosmetics/personal-care items (cross-listed from Open Beauty
+// Facts, or just miscategorized) in a plain name search, which is how a "fruit sorbet" swap
+// suggestion could resolve to a skin-cleansing water photo instead. Filtering these out trades
+// a small amount of recall for not showing a completely unrelated product photo.
+const NON_FOOD_CATEGORY_PATTERN = /cosmetic|beauty|perfum|skin-care|personal-care|hygiene|petfood|animal-feed/i;
+const looksLikeFood = (categoriesTags: unknown): boolean => {
+  if (!Array.isArray(categoriesTags)) return true; // no data to judge by — don't punish a product just for missing categories
+  return !categoriesTags.some((tag) => typeof tag === "string" && NON_FOOD_CATEGORY_PATTERN.test(tag));
 };
 
 const categoryOverlap = (a: unknown, b: unknown) => {
@@ -97,8 +113,8 @@ export const findBetterSwaps = async ({
       const satFat = toNumber(nutriments["saturated-fat_100g"]);
       const energy = toNumber(nutriments["energy-kcal_100g"] ?? nutriments.energy_kcal);
       const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
-      if (!rawImage) return null;
-      const image = toFullSizeImage(rawImage);
+      if (!rawImage || !looksLikeFood(item.categories_tags)) return null;
+      const image = toSizedImage(rawImage, GRID_IMAGE_SIZE);
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
       const improvement =
@@ -165,14 +181,18 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
     names.map(async (name) => {
       const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
       searchUrl.searchParams.set("q", name);
-      searchUrl.searchParams.set("page_size", "3");
-      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url");
+      searchUrl.searchParams.set("page_size", "5");
+      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
+      // Picks the first result (in the search's own relevance order) that both has a photo
+      // AND actually looks like a food product — previously took the first result with ANY
+      // photo regardless of relevance or category, which could land on an unrelated
+      // cosmetics/personal-care product that happened to share a word with the food name.
       const withImage = products.find((item) =>
-        (typeof item.image_front_url === "string" && item.image_front_url) ||
-        (typeof item.image_front_small_url === "string" && item.image_front_small_url)
+        ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url)) &&
+        looksLikeFood(item.categories_tags)
       );
       const rawOffImage = withImage
         ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
@@ -182,7 +202,7 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
       // real full result later (Recommendations) rather than just shown as a static image.
       const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
-      if (rawOffImage) return { name, image: toFullSizeImage(rawOffImage), code };
+      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
       return { name, image: wikiImage, code };
@@ -196,20 +216,21 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
 export type BrowseItem = { code: string; name: string; image: string; grade: string };
 
-// Backs the Browse/search/Top screens — a free-text search hits Open Food Facts directly (any
-// packaged product in their database, not just what the user has personally scanned), sorted
-// best-rated-first same as a category browse, so genuinely well-rated products surface first
-// throughout. Category filtering has to go through `q` as a quoted field query
-// (`categories_tags:"en:snacks"`) — a plain `categories_tags` URL param is silently ignored by
-// this API (confirmed: it returned identical unfiltered results for every category tried).
-export const browseProducts = async ({ query, category }: { query?: string; category?: string }): Promise<BrowseItem[]> => {
+const mapBrowseItem = (item: Record<string, unknown>): BrowseItem | null => {
+  const code = typeof item.code === "string" ? item.code : "";
+  const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "";
+  if (!code || !name) return null;
+  const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
+  const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : "?";
+  return { code, name, image: rawImage ? toSizedImage(rawImage, GRID_IMAGE_SIZE) : "", grade };
+};
+
+// Backs the Search screen — plain relevance ranking (the API's default when no sort_by is
+// given), same as typing into any search box: the point is finding the specific thing typed,
+// not being redirected toward whatever happens to be highest-rated.
+const searchProducts = async (query: string): Promise<BrowseItem[]> => {
   const url = new URL(`${OFF_SEARCH_BASE}/search`);
-  if (query) {
-    url.searchParams.set("q", query);
-  } else if (category) {
-    url.searchParams.set("q", `categories_tags:"${category}"`);
-  }
-  url.searchParams.set("sort_by", "nutriscore_score");
+  url.searchParams.set("q", query);
   url.searchParams.set("page_size", "24");
   url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url");
 
@@ -217,15 +238,45 @@ export const browseProducts = async ({ query, category }: { query?: string; cate
   if (!response?.ok) return [];
   const data = await response.json();
   const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
+  return products.map(mapBrowseItem).filter((item): item is BrowseItem => item !== null);
+};
+
+const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
+
+// Backs the Top screen's category browsing. Sorting a category purely by Nutri-Score (as this
+// used to) surfaces whichever obscure, barely-scanned entries happen to tie for grade A —
+// mostly foreign-language listings nobody's actually heard of, since ties break close to
+// arbitrarily. Pulling the most-scanned products first, THEN ranking that pool by grade,
+// answers what "top" should actually mean here: the best-rated among products people
+// genuinely recognize, not the single most technically-optimal barcode in the database.
+const topProductsForCategory = async (category: string): Promise<BrowseItem[]> => {
+  const url = new URL(`${OFF_SEARCH_BASE}/search`);
+  url.searchParams.set("q", `categories_tags:"${category}"`);
+  url.searchParams.set("sort_by", "-unique_scans_n");
+  url.searchParams.set("page_size", "60");
+  url.searchParams.set("fields", "code,product_name,product_name_en,nutriscore_grade,image_front_small_url,image_front_url,unique_scans_n");
+
+  const response = await withTimeout(fetch(url, { headers: OFF_HEADERS, next: { revalidate: 3600 } }), 8000).catch(() => null);
+  if (!response?.ok) return [];
+  const data = await response.json();
+  const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
 
   return products
-    .map((item): BrowseItem | null => {
-      const code = typeof item.code === "string" ? item.code : "";
-      const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "";
-      if (!code || !name) return null;
-      const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
-      const grade = typeof item.nutriscore_grade === "string" && /^[a-e]$/.test(item.nutriscore_grade) ? item.nutriscore_grade.toUpperCase() : "?";
-      return { code, name, image: rawImage ? toFullSizeImage(rawImage) : "", grade };
-    })
-    .filter((item): item is BrowseItem => item !== null);
+    .map((item) => ({ item: mapBrowseItem(item), scans: toNumber(item.unique_scans_n) }))
+    .filter((entry): entry is { item: BrowseItem; scans: number } => entry.item !== null)
+    // Stable sort keeps popularity as the tiebreaker within each grade — Array.prototype.sort
+    // is guaranteed stable in every modern JS engine, so items already ordered
+    // most-scanned-first stay in that relative order once grouped by grade.
+    .sort((a, b) => (GRADE_RANK[a.item.grade] ?? 5) - (GRADE_RANK[b.item.grade] ?? 5))
+    .slice(0, 24)
+    .map(({ item }) => item);
+};
+
+// Category filtering has to go through `q` as a quoted field query
+// (`categories_tags:"en:snacks"`) — a plain `categories_tags` URL param is silently ignored by
+// this API (confirmed: it returned identical unfiltered results for every category tried).
+export const browseProducts = async ({ query, category }: { query?: string; category?: string }): Promise<BrowseItem[]> => {
+  if (query) return searchProducts(query);
+  if (category) return topProductsForCategory(category);
+  return [];
 };

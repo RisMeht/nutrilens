@@ -76,6 +76,14 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
   .barcode-frame i:nth-child(3){transform:translate(calc((600px - clamp(285px,72vw,600px)) / 2),-120px)}
   .barcode-frame i:nth-child(4){transform:translate(calc((clamp(285px,72vw,600px) - 600px) / 2),-120px)}
 }
+/* focus-frame and bottom-panel are both positioned independently (percentage-from-top vs
+   pinned-to-bottom) rather than laid out relative to each other, so on a short viewport —
+   common once Safari's own chrome/URL bar eats into the visible height, not just a narrow
+   phone — the frame's bottom corners can run straight into the mode-switch pill instead of
+   clearing it. Pulling the frame further up specifically when height is tight (independent of
+   width) keeps real clearance regardless of how much of the screen the browser itself is using. */
+@media(max-height:720px){.top-copy{top:6%}.focus-frame{top:38%}}
+@media(max-height:620px){.focus-frame{top:34%}}
 /* The History/Search buttons flanking the mode-switch, plus its own button padding, were sized
    for desktop's extra breathing room — on a narrow phone (iPhone SE-width and up) that combined
    width ran past the screen edge. Tighter side-button size/gap and mode-switch padding keep the
@@ -212,6 +220,12 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .page-clear:hover{filter:brightness(1.2)}
 .page-empty{color:#c5d1c0;font-size:14px;text-align:center;margin-top:60px;line-height:1.5}
 .history-list{display:flex;flex-direction:column;gap:8px;padding-top:12px}
+/* Every dynamically-loaded row/tile (history rows, category rows, grid tiles, recs pairs)
+   fades and rises in on its own rather than snapping onto the screen the instant data
+   arrives — combined with each item's own inline animation-delay (staggered by index), a
+   whole list cascades in instead of popping in as one flat block. */
+.stagger-in{animation:stagger-in .38s cubic-bezier(.16,.8,.24,1) both}
+@keyframes stagger-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .history-row{display:flex;align-items:center;gap:6px}
 .history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:9px;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:background .15s ease}
 .history-row-main:hover{background:#ffffff18}
@@ -225,7 +239,9 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 
 /* Search: text input above a photo grid. */
 .browse-search{display:flex;align-items:center;gap:10px;background:#ffffff12;border:1px solid #ffffff18;border-radius:14px;padding:13px 16px;color:#a8b8a3;margin-top:12px}
-.browse-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:500 15px "DM Sans";color:#f7faef}
+/* iOS Safari auto-zooms the whole page on focus for any text input under 16px — every input
+   below is explicitly >=16px specifically to opt out of that, not for visual sizing. */
+.browse-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:500 16px "DM Sans";color:#f7faef}
 .browse-search input::placeholder{color:#8fa38b}
 .browse-loading{display:grid;place-items:center;padding:40px 0;color:#baff59}
 .browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:11px;margin-top:16px}
@@ -274,13 +290,26 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 
 /* Persistent bottom navigation — History / Recs / Scan / Top / Search — sits above every
    screen (camera view and every full-page tab alike) so switching sections never needs a trip
-   back through "Scan" first. Same glass-pill language as the mode-switch above it. */
-.tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:36;display:flex;justify-content:space-around;align-items:stretch;gap:2px;padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);background:#0a1912d6;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #ffffff14}
+   back through "Scan" first. Scan itself breaks from a plain row of equal tabs: it's a raised
+   circular button poking up through a gap in the middle of the bar, the same "primary action
+   floats above secondary ones" shape a lot of camera/scanner-first apps reach for — a
+   deliberately different arrangement from a flat five-in-a-row tab strip. */
+.tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:36;display:flex;align-items:stretch;gap:2px;padding:9px 10px calc(env(safe-area-inset-bottom,0px) + 9px);background:#0a1912d6;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #ffffff14}
 .tab-bar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:12px;color:#8fa38b;font:600 10.5px "DM Sans";padding:7px 2px;cursor:pointer;transition:color .18s ease,background .18s ease}
-.tab-bar button svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.tab-bar button.active{color:#baff59;background:#ffffff0f}
-.tab-bar button.active svg{transform:translateY(-1px) scale(1.08)}
-.tab-bar button:active{transform:scale(.94)}
+.tab-bar>button svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.tab-bar>button.active{color:#baff59;background:#ffffff0f}
+.tab-bar>button.active svg{transform:translateY(-1px) scale(1.08)}
+.tab-bar>button:active{transform:scale(.94)}
+.tab-scan-spacer{flex:1}
+/* Qualified as `.tab-bar button.tab-scan-fab` (not just `.tab-scan-fab`) specifically to
+   out-specificity the generic `.tab-bar button` rule above — a bare class selector alone loses
+   that fight to a class+type descendant selector, which was quietly overriding this button's
+   own flex/display/padding/background and rendering it as a flat rectangle instead of a
+   raised circle. */
+.tab-bar button.tab-scan-fab{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);width:60px;height:60px;flex:none;border-radius:50%;background:#baff59;color:#153d1f;border:5px solid #0a1912;box-shadow:0 8px 20px #06150dbb;display:grid;place-items:center;padding:0;cursor:pointer;transition:transform .22s cubic-bezier(.34,1.56,.64,1),background .18s ease}
+.tab-bar button.tab-scan-fab:active{transform:translateX(-50%) scale(.92)}
+.tab-bar button.tab-scan-fab.active{background:#d4ff8f;color:#153d1f}
+.tab-bar button.tab-scan-fab.active svg{transform:scale(1.06)}
 
 /* Drag-to-confirm slider on the home screen: the thumb tracks the pointer and only completes
    past ~70% of the track width, springing back to the start otherwise. A single flat pill —
@@ -338,7 +367,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 @keyframes typing-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
 .chat-error{flex:none;margin:0 20px;padding:9px 12px;border-radius:10px;background:#4b211ee0;color:#ffe4de;font-size:12.5px}
 .chat-input-row{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
-.chat-input-row input{flex:1;min-width:0;border:1px solid #ffffff1c;background:#ffffff12;border-radius:999px;padding:12px 16px;font:500 14px "DM Sans";color:#f7faef;outline:0}
+.chat-input-row input{flex:1;min-width:0;border:1px solid #ffffff1c;background:#ffffff12;border-radius:999px;padding:12px 16px;font:500 16px "DM Sans";color:#f7faef;outline:0}
 .chat-input-row input::placeholder{color:#8fa38b}
 .chat-input-row input:disabled{opacity:.6}
 .chat-input-row button{flex:none;width:42px;height:42px;border:0;border-radius:50%;background:#baff59;color:#153d1f;display:grid;place-items:center;cursor:pointer;transition:transform .15s ease,opacity .15s ease}
