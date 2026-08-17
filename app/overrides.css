@@ -28,18 +28,21 @@ header{padding-top:50px}
 .home-topbar{position:absolute;z-index:2;top:0;left:0;right:0;display:flex;align-items:center;justify-content:flex-end;padding:50px clamp(22px,5vw,40px) 0}
 /* Hand-picked top:X% positioning previously collided on short viewports — a flex column
    between the top bar and the swipe button centers the whole stack regardless of height. */
-.home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(18px,3.5vh,30px)}
-.home-hero{position:relative;width:min(300px,68vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 30px 70px #06150d90,inset 0 0 0 1px #ffffff14}
-.home-hero-emoji{font-size:clamp(70px,17vw,104px);filter:drop-shadow(0 0 40px #baff5966)}
-.home-hero-chip{position:absolute;left:-10%;bottom:7%;display:flex;align-items:center;gap:10px;background:#112016ee;border:1px solid #ffffff1c;border-radius:16px;padding:9px 16px 9px 9px;box-shadow:0 14px 30px #06150dcc;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
-.home-hero-chip-ring{flex:none;width:34px;height:34px;border-radius:50%;background:#5fae4a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+.home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(26px,5vh,46px)}
+.home-logo{width:72px;height:72px;border-radius:20px;display:block;margin:0 auto 16px;box-shadow:0 10px 24px #06150d80,0 0 0 1px #ffffff14;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both}
+.home-copy{position:static;left:auto;transform:none;width:min(760px,calc(100% - 40px));text-align:center;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both .05s}
+.home-copy h1{font-size:clamp(52px,12vw,88px);white-space:normal;line-height:.95;letter-spacing:-.05em;margin:0;color:#f7faef}
+.home-copy>span{display:block;margin-top:14px;color:#c5d1c0;font-size:18px;letter-spacing:-.01em}
+/* Hero shrunk relative to the title/tagline above it — it reads as a supporting visual now,
+   not the dominant element, with a subtle fade/rise-in to feel less like it just appeared. */
+.home-hero{position:relative;width:min(220px,50vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 26px 60px #06150d90,inset 0 0 0 1px #ffffff1a;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both .12s}
+.home-hero-emoji{font-size:clamp(52px,12.5vw,76px);filter:drop-shadow(0 0 32px #baff5966)}
+.home-hero-chip{position:absolute;left:-12%;bottom:6%;display:flex;align-items:center;gap:9px;background:#112016ee;border:1px solid #ffffff1c;border-radius:15px;padding:8px 15px 8px 8px;box-shadow:0 14px 30px #06150dcc;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
+.home-hero-chip-ring{flex:none;width:32px;height:32px;border-radius:50%;background:#5fae4a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
 .home-hero-chip-text{display:grid;line-height:1.15}
-.home-hero-chip-text b{font-size:17px;color:#f4fbee}
-.home-hero-chip-text small{font-size:10px;color:#a8b8a3;text-transform:uppercase;letter-spacing:.06em}
-.home-logo{width:52px;height:52px;border-radius:16px;display:block;margin:0 auto 12px;box-shadow:0 8px 20px #06150d80}
-.home-copy{position:static;left:auto;transform:none;width:min(760px,calc(100% - 40px));text-align:center}
-.home-copy h1{font-size:clamp(32px,6.5vw,50px);white-space:normal;line-height:1;letter-spacing:-.05em;margin:0;color:#f7faef}
-.home-copy>span{display:block;margin-top:10px;color:#c5d1c0;font-size:15px}
+.home-hero-chip-text b{font-size:16px;color:#f4fbee}
+.home-hero-chip-text small{font-size:9px;color:#a8b8a3;text-transform:uppercase;letter-spacing:.06em}
+@keyframes home-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 .wordmark-icon{width:31px;height:31px;border-radius:10px;display:block}
 /* Leaves clearance above the persistent tab bar so the shutter row never sits underneath it. */
 .bottom-panel{background:transparent;border:0;padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 110px)}.mode-switch{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px #0008}.scan-actions{margin-top:12px}
@@ -143,7 +146,7 @@ header{padding-top:50px}
    Top/Search/Recs/History rendered it invisibly behind that still-mounted page, only becoming
    visible once the page was closed. Bumped above every other layer including the tab bar (36)
    since a modal should always win. */
-.help-backdrop{position:fixed;inset:0;z-index:40;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
+.help-backdrop{position:fixed;inset:0;z-index:40;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card .help-credit{margin:14px 0 0;font-size:10px;text-align:center;color:#9caa98;letter-spacing:.02em}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
 /* Better Swaps tiles are now real buttons (tap to open that swap's own full result) rather
    than static article cards — reset the browser's default button chrome so they still look
    exactly like the plain photo tiles they replace. */
@@ -325,8 +328,9 @@ header{padding-top:50px}
 .stagger-in{animation:stagger-in .38s cubic-bezier(.16,.8,.24,1) both}
 @keyframes stagger-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .history-row{display:flex;align-items:center;gap:6px}
-.history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:9px;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:background .15s ease}
+.history-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:9px;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:background .15s ease,transform .12s ease}
 .history-row-main:hover{background:#ffffff18}
+.history-row-main:active{transform:scale(.98)}
 .history-row-main img{width:46px;height:46px;border-radius:10px;object-fit:cover;flex:none;background:#1c331f}
 .history-row-text{flex:1;min-width:0}
 .history-row-text b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f7faef}
@@ -356,6 +360,7 @@ header{padding-top:50px}
 .browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:11px;margin-top:16px}
 .browse-tile{position:relative;border:1px solid #ffffff14;background:#ffffff0d;border-radius:14px;padding:9px;display:flex;flex-direction:column;gap:8px;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:background .15s ease,transform .15s ease}
 .browse-tile:hover{background:#ffffff16;transform:translateY(-2px)}
+.browse-tile:active:not(:disabled){transform:scale(.97)}
 .browse-tile:disabled{cursor:default}
 .browse-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#1c331f}
 .browse-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
@@ -366,8 +371,9 @@ header{padding-top:50px}
 /* Top: a tappable category list, matching the app's own list-row language, before drilling
    into a category's photo grid (reuses .browse-grid/.browse-tile). */
 .category-list{display:flex;flex-direction:column;gap:6px;padding-top:12px}
-.category-row{display:flex;align-items:center;gap:14px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:14px 16px;cursor:pointer;font:inherit;color:#f7faef;transition:background .15s ease}
+.category-row{display:flex;align-items:center;gap:14px;background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:14px 16px;cursor:pointer;font:inherit;color:#f7faef;transition:background .15s ease,transform .12s ease}
 .category-row:hover{background:#ffffff18}
+.category-row:active{transform:scale(.98)}
 .category-emoji{font-size:22px;flex:none}
 .category-label{flex:1;font-size:14.5px;font-weight:600}
 .category-row svg{color:#8fa38b;flex:none}
@@ -379,6 +385,7 @@ header{padding-top:50px}
 .recs-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .recs-tile{border:1px solid #ffffff14;background:#ffffff0d;border-radius:14px;padding:9px;display:flex;flex-direction:column;gap:8px;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:background .15s ease,transform .15s ease}
 .recs-tile:hover{background:#ffffff16;transform:translateY(-2px)}
+.recs-tile:active:not(:disabled){transform:scale(.97)}
 .recs-tile:disabled{cursor:default}
 .recs-tile span{font-size:12.5px;line-height:1.3;color:#eaf3e3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .recs-tile-img{position:relative;width:100%;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#1c331f}

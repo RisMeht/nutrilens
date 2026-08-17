@@ -98,6 +98,16 @@ const normalizeAlternatives = (alts?: unknown): Alternative[] => {
     .filter((item): item is Alternative => item !== null);
 };
 
+// A food photo (live shutter or gallery pick) often has the product's own barcode sitting
+// right there in frame — trying a quick decode against it before falling back to the AI photo
+// analysis means those scans get the same barcode-sourced, per-100g-accurate nutrition data as
+// scanning the barcode directly, instead of the AI's best guess from the picture alone. One
+// reader instance is reused across attempts rather than constructed fresh each time.
+const photoBarcodeReader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
+const detectBarcodeInCanvas = (canvas: HTMLCanvasElement): string | null => {
+  try { return photoBarcodeReader.decodeFromCanvas(canvas).getText(); } catch { return null; }
+};
+
 // Shared by the live barcode-scan flow and the Browse screen (picking any product from a
 // search/category list runs through the exact same lookup+merge as actually scanning it) —
 // both the instant Open Food Facts lookup and the Gemini enrichment are fetched together (in
@@ -423,9 +433,36 @@ export default function Home() {
     c.getContext("2d")?.drawImage(source, 0, 0, c.width, c.height);
     setCaptureState("pulse");
     window.setTimeout(() => setCaptureState(s => (s === "pulse" ? "processing" : s)), 1700);
+    // If the product's own barcode happens to be visible in the food photo, use that instead of
+    // the AI's best guess from the picture — same per-100g Open Food Facts data as scanning the
+    // barcode directly, so it's strictly more accurate whenever it's available.
+    const code = detectBarcodeInCanvas(c);
+    if (code) { barcodeResult(code); return; }
     analyze(c.toDataURL("image/jpeg", .8));
   };
-  const file = (f?: File) => { if (!f) return; setCaptureState("processing"); const reader = new FileReader(); reader.onload = () => analyze(reader.result as string); reader.readAsDataURL(f); };
+  const file = (f?: File) => {
+    if (!f) return;
+    setCaptureState("processing");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      // Same barcode-first check as a live shutter capture — a gallery photo can show the
+      // product's barcode just as well as the camera can.
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas"), ratio = Math.min(1, 1400 / img.width);
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const code = detectBarcodeInCanvas(canvas);
+        if (code) { barcodeResult(code); return; }
+        analyze(dataUrl);
+      };
+      img.onerror = () => analyze(dataUrl);
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(f);
+  };
   const changeMode = (next: ScanMode) => {
     if (next === mode) return;
     setMode(next);
@@ -523,7 +560,14 @@ export default function Home() {
     <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && !loading && cameraReady && <div className="scan-beam" />}{mode === "food" && loading && captureState === "pulse" && <div className="scan-beam scan-beam-once" />}{loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse")) && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch" ref={modeSwitchRef}>{modeIndicator.ready && <div className="mode-switch-indicator" style={{ left: modeIndicator.left, width: modeIndicator.width }} />}<button data-mode="food" className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button data-mode="barcode" className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
-  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content" ref={resultContentRef}><div className="result-photo-wrap"><div className="result-photo-banner"><Thumb src={result.image || fallbackFoodImage(result.name)} fallback={fallbackFoodImage(result.name)} alt={result.name} eager /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div>{isPoor && concernsBlock}<div className="nutrition-row">{result.facts?.map((fact, i) => <button type="button" key={`${fact.label}-${i}`} onClick={() => setNutrientDetail(fact)}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</button>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">The score above is based on nutrition alone, so it always matches what you see before opening a product. Additives and organic status are shown here for context.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || (!isPoor && result.concerns?.length) || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{!isPoor ? concernsBlock : null}{result.alternatives?.length ? <div className="alternatives"><strong>{swapsHeading}</strong><div className="alternatives-grid">{result.alternatives.map((item, i) => { const swapGrade = item.code && item.code in swapGradeFixes ? swapGradeFixes[item.code] : item.grade; return <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><Thumb src={item.image || fallbackFoodImage(item.name)} fallback={fallbackFoodImage(item.name)} alt={item.name} />{swapGrade && <em className={`swap-grade grade-${swapGrade.toLowerCase()}`}>{swapGrade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>; })}</div></div> : null}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}
+  {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content" ref={resultContentRef}><div className="result-photo-wrap"><div className="result-photo-banner"><Thumb src={result.image || fallbackFoodImage(result.name)} fallback={fallbackFoodImage(result.name)} alt={result.name} eager /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div>{isPoor && concernsBlock}<div className="nutrition-row">{result.facts?.map((fact, i) => <button type="button" key={`${fact.label}-${i}`} onClick={() => setNutrientDetail(fact)}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</button>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">The score above is based on nutrition alone, so it always matches what you see before opening a product. Additives and organic status are shown here for context.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || (!isPoor && result.concerns?.length) || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{!isPoor ? concernsBlock : null}{(() => {
+                    // Every tile here needs to both open a real product AND show its actual
+                    // photo — a name-only AI suggestion that never resolved to a matched OFF
+                    // product (no code) used to still render, tapping it just silently jumped
+                    // to Search instead of opening anything, which read as a dead/broken tile.
+                    const clickableAlts = (result.alternatives ?? []).filter((item) => item.code && item.image);
+                    return clickableAlts.length ? <div className="alternatives"><strong>{swapsHeading}</strong><div className="alternatives-grid">{clickableAlts.map((item, i) => { const swapGrade = item.code && item.code in swapGradeFixes ? swapGradeFixes[item.code] : item.grade; return <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><Thumb src={item.image!} fallback={fallbackFoodImage(item.name)} alt={item.name} />{swapGrade && <em className={`swap-grade grade-${swapGrade.toLowerCase()}`}>{swapGrade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>; })}</div></div> : null;
+                  })()}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}
   {tab === "history" && <History list={historyList} clearArmed={clearArmed} onClose={() => setTab("scan")} onView={viewHistoryEntry} onDelete={removeHistoryEntry} onClearAll={clearAllHistory} />}
   {tab === "recs" && <Recs onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); }} onSearch={(q) => { setTab("search"); setSearchSeed(q); }} />}
   {tab === "top" && <Top onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); addHistoryEntry(r).catch(() => {}); }} />}
@@ -916,7 +960,10 @@ function Recs({ onClose, onOpenResult, onSearch }: { onClose: () => void; onOpen
     const built: { bad: HistoryEntry; good: Alternative }[] = [];
     for (const entry of list) {
       const poor = entry.grade === "D" || entry.grade === "E" || (typeof entry.score === "number" && entry.score < 50);
-      const good = entry.alternatives?.[0];
+      // Requires a real code (so the tile actually opens a product) and image (so it's not a
+      // generated placeholder) — a name-only AI suggestion that never resolved to a matched OFF
+      // product used to still show up here and just silently jump to Search on tap instead.
+      const good = entry.alternatives?.find((alt) => alt.code && alt.image);
       if (poor && good && !seen.has(entry.name)) { seen.add(entry.name); built.push({ bad: entry, good }); }
       if (built.length >= 12) break;
     }
@@ -962,5 +1009,5 @@ function Recs({ onClose, onOpenResult, onSearch }: { onClose: () => void; onOpen
 function Help({ onClose }: { onClose: () => void }) {
   const [closing, setClosing] = useState(false);
   const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
-  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p></section></div>;
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p><p className="help-credit">Made by Rishaan Mehta</p></section></div>;
 }
