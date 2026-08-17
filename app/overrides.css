@@ -157,7 +157,36 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
    Top/Search/Recs/History rendered it invisibly behind that still-mounted page, only becoming
    visible once the page was closed. Bumped above every other layer including the tab bar (36)
    since a modal should always win. */
-.help-backdrop{position:fixed;inset:0;z-index:40;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card .help-credit{margin:14px 0 0;font-size:10px;text-align:center;color:#9caa98;letter-spacing:.02em}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
+.help-backdrop{position:fixed;inset:0;z-index:40;background:#06120bb8;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px;animation:fade-in .18s ease}.help-card{position:relative;width:min(390px,100%);background:#f4f7ee;color:#18311d;border-radius:24px;padding:31px;box-shadow:0 24px 80px #0008;animation:sheet-in .25s cubic-bezier(.2,.8,.2,1)}.help-card>svg{color:#4d863e}.help-card h2{margin:14px 0 16px;font-size:27px;letter-spacing:-.04em}.help-card p{line-height:1.45;color:#536b54;font-size:14px}.help-card .help-note{font-size:12px;background:#e0e9dc;border-radius:9px;padding:10px}.help-card .help-tutorial-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:14px;padding:12px;border:0;border-radius:10px;background:#e0e9dc;color:#234127;font:600 13px "DM Sans";cursor:pointer;transition:filter .15s ease}.help-card .help-tutorial-btn:hover{filter:brightness(.96)}.help-card .help-tutorial-btn:active{filter:brightness(.92)}.help-card .help-credit{margin:14px 0 0;font-size:10px;text-align:center;color:#9caa98;letter-spacing:.02em}
+
+/* First-run onboarding tutorial — a full-screen, dark-themed carousel (distinct from the light
+   Help popup) so it reads as part of the app itself, not a bolted-on dialog. Drag-to-swipe
+   mirrors the same pointer-capture pattern SwipeEnter already uses, for a consistent feel. */
+.onboarding-backdrop{position:fixed;inset:0;z-index:60;background:radial-gradient(circle at 50% 28%,#1a4022 0,#0b2114 55%,#07150d 100%);display:flex;flex-direction:column;animation:fade-in .3s ease}
+.onboarding-backdrop.closing{animation:fade-out .24s ease forwards}
+.onboarding-card{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.onboarding-skip{position:absolute;top:max(50px,env(safe-area-inset-top));right:24px;z-index:2;background:transparent;border:0;color:#c5d1c0;font:600 14px "DM Sans";cursor:pointer;padding:10px}
+.onboarding-track{flex:1;display:flex;touch-action:pan-y;user-select:none;padding-top:max(50px,env(safe-area-inset-top))}
+.onboarding-slide{flex:0 0 100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 34px;gap:24px}
+.onboarding-art{display:grid;place-items:center;animation:onboarding-art-in .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes onboarding-art-in{from{opacity:0;transform:scale(.85) translateY(8px)}to{opacity:1;transform:none}}
+.onboarding-logo{width:104px;height:104px;border-radius:28px;display:block;box-shadow:0 16px 38px #06150d80}
+.onboarding-icon{width:130px;height:130px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;color:#baff59;box-shadow:0 22px 54px #06150d90,inset 0 0 0 1px #ffffff14}
+.onboarding-score-demo .score-ring{width:130px;height:130px}
+.onboarding-score-demo .score-ring b{font-size:42px}
+.onboarding-slide h2{font-size:clamp(24px,6.5vw,30px);letter-spacing:-.03em;margin:0;color:#f7faef;line-height:1.18}
+.onboarding-slide span{font-size:15px;line-height:1.55;color:#c5d1c0;max-width:340px}
+.onboarding-dots{display:flex;justify-content:center;align-items:center;gap:8px;padding:0 0 20px;flex:none}
+.onboarding-dot{width:8px;height:8px;border-radius:50%;background:#ffffff2a;border:0;padding:0;cursor:pointer;transition:width .3s cubic-bezier(.3,.7,.3,1),background .3s ease}
+.onboarding-dot.active{width:24px;background:#baff59;border-radius:5px}
+.onboarding-nav{flex:none;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 24px max(24px,env(safe-area-inset-bottom))}
+.onboarding-back{flex:none;width:46px;height:46px;border-radius:50%;background:#ffffff14;border:0;color:#eaf3e3;display:grid;place-items:center;cursor:pointer;transition:filter .15s ease,transform .15s ease}
+.onboarding-back:hover{filter:brightness(1.2)}
+.onboarding-back:active{transform:scale(.94)}
+.onboarding-next{display:flex;align-items:center;gap:8px;border:0;background:#baff59;color:#153d1f;font:700 15px "DM Sans";padding:14px 26px;border-radius:14px;cursor:pointer;margin-left:auto;transition:filter .15s ease,transform .15s ease}
+.onboarding-next:hover{filter:brightness(1.08)}
+.onboarding-next:active{transform:scale(.97)}
+.onboarding-cta{padding:14px 30px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
 /* Better Swaps tiles are now real buttons (tap to open that swap's own full result) rather
    than static article cards — reset the browser's default button chrome so they still look
    exactly like the plain photo tiles they replace. */
@@ -315,7 +344,14 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
    consistent app, not a different product bolted on. */
 .full-page{position:fixed;inset:0;z-index:32;background:radial-gradient(circle at 50% 0%,#345c2c 0,#1a4022 35%,#0b2114 72%,#07150d);color:#f7faef;display:flex;flex-direction:column;animation:page-in .38s cubic-bezier(.16,.8,.24,1) both}
 .full-page.closing{animation:page-out .3s cubic-bezier(.4,0,1,1) forwards}
-.full-page-header{flex:none;display:flex;align-items:center;gap:14px;padding:calc(env(safe-area-inset-top,0px) + 20px) 20px 16px}
+/* Was `calc(env(safe-area-inset-top,0px) + 20px)`, which assumed the env() term would actually
+   contribute the notch height on top of a bare 20px base — but mutating the viewport meta tag
+   from JS after initial parse (see layout.tsx) doesn't reliably make WebKit start reporting a
+   real env(safe-area-inset-top) value; it stayed 0 in practice, leaving only 20px of clearance.
+   Matches the same robust fixed-floor pattern used for the Scan screen's own header — a plain
+   pixel value big enough to clear the notch/Dynamic Island on its own, with env() layered on
+   top via max() only as a bonus if it ever does report something real, never depended on. */
+.full-page-header{flex:none;display:flex;align-items:center;gap:14px;padding:max(50px,env(safe-area-inset-top)) 20px 16px}
 .full-page-back{flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#142d1cce;color:#eff8e8;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:transform .18s ease,filter .18s ease}
 .full-page-back:hover{transform:translateY(-1px);filter:brightness(1.2)}
 .full-page-header h2{flex:1;min-width:0;margin:0;font-size:21px;letter-spacing:-.03em;color:#f7faef}

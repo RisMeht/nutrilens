@@ -160,6 +160,7 @@ const resolveBarcodeResult = async (code: string): Promise<Result> => {
 // tied to their account system; this is the closest equivalent that doesn't require one.
 type HistoryEntry = Result & { historyId: string; scannedAt: number };
 const HISTORY_KEY = "nutrilens-history-v1";
+const ONBOARDED_KEY = "viva-onboarded-v1";
 const MAX_HISTORY = 60;
 const loadHistory = (): HistoryEntry[] => {
   try {
@@ -238,6 +239,13 @@ function Thumb({ src, fallback, alt = "", eager = false }: { src: string; fallba
 export default function Home() {
   const [mode, setMode] = useState<ScanMode>("food"), [cameraOn, setCameraOn] = useState(false), [entered, setEntered] = useState(false), [facing, setFacing] = useState<"environment" | "user">("environment");
   const [loading, setLoading] = useState(false), [result, setResult] = useState<Result | null>(null), [error, setError] = useState(""), [cameraError, setCameraError] = useState(""), [helpOpen, setHelpOpen] = useState(false);
+  // Shown automatically exactly once, on this device's first-ever open — never again after
+  // that (including after a force-quit/crash/reinstall-of-the-same-browser-storage), tracked by
+  // a plain localStorage flag rather than anything session-based. Also replayable any time via
+  // the Help popup's "Replay tutorial" button, which opens it without touching that flag.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  useEffect(() => { try { if (!localStorage.getItem(ONBOARDED_KEY)) setOnboardingOpen(true); } catch { /* storage unavailable — just skip the tutorial rather than block the app */ } }, []);
+  const closeOnboarding = () => { try { localStorage.setItem(ONBOARDED_KEY, "1"); } catch { /* best-effort */ } setOnboardingOpen(false); };
   // "pulse" = the brief one-shot beam right after a live shutter capture; "processing" = the
   // spinner for the remainder of the AI request (also the immediate state for a gallery pick,
   // which skips the pulse entirely — see file()/takeFoodScan() below).
@@ -655,7 +663,8 @@ export default function Home() {
       </div>
     </div>
     <SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />
-    {helpOpen && <Help onClose={() => setHelpOpen(false)} />}
+    {helpOpen && <Help onClose={() => setHelpOpen(false)} onTutorial={() => { setHelpOpen(false); setOnboardingOpen(true); }} />}
+    {onboardingOpen && <Onboarding onClose={closeOnboarding} />}
   </main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
     <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />Viva</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div></header>
@@ -670,7 +679,7 @@ export default function Home() {
                     // to Search instead of opening anything, which read as a dead/broken tile.
                     const clickableAlts = (result.alternatives ?? []).filter((item) => item.code && item.image);
                     return clickableAlts.length ? <div className="alternatives"><strong>{swapsHeading}</strong><div className="alternatives-grid">{clickableAlts.map((item, i) => { const swapGrade = item.code && item.code in swapGradeFixes ? swapGradeFixes[item.code] : item.grade; return <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><Thumb src={item.image!} fallback={fallbackFoodImage(item.name)} alt={item.name} />{swapGrade && <em className={`swap-grade grade-${swapGrade.toLowerCase()}`}>{swapGrade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>; })}</div></div> : null;
-                  })()}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}
+                  })()}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} onTutorial={() => { setHelpOpen(false); setOnboardingOpen(true); }} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}{onboardingOpen && <Onboarding onClose={closeOnboarding} />}
   {tab === "history" && <History list={historyList} clearArmed={clearArmed} onClose={() => setTab("scan")} onView={viewHistoryEntry} onDelete={removeHistoryEntry} onClearAll={clearAllHistory} />}
   {tab === "recs" && <Recs onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); }} onSearch={(q) => { setTab("search"); setSearchSeed(q); }} />}
   {tab === "top" && <Top onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); addHistoryEntry(r).catch(() => {}); }} />}
@@ -1109,8 +1118,91 @@ function Recs({ onClose, onOpenResult, onSearch }: { onClose: () => void; onOpen
   </div>;
 }
 
-function Help({ onClose }: { onClose: () => void }) {
+type OnboardingStep = { kind: "logo" | "camera" | "barcode" | "score" | "detail"; title: string; body: string };
+const ONBOARDING_STEPS: OnboardingStep[] = [
+  { kind: "logo", title: "Know exactly what you're eating", body: "Scan any packaged food or meal and get an instant, honest health breakdown — no guessing, no marketing spin." },
+  { kind: "camera", title: "Point and scan any food", body: "Snap a photo of a meal, snack, or ingredient label and Viva estimates its nutrition and health score in seconds." },
+  { kind: "barcode", title: "Or scan the barcode", body: "Switch to Barcode mode and hold any packaged product's barcode in frame — it reads automatically and pulls real nutrition data." },
+  { kind: "score", title: "A score you can trust", body: "Every item gets a 0–100 score and A–E grade from its actual nutrition — sugar, sodium, protein, and more — never influenced by marketing." },
+  { kind: "detail", title: "Tap anything for more", body: "Tap any nutrient for a detailed breakdown, check flagged ingredients for their real risk level, and see better swaps when something scores low." }
+];
+
+function Onboarding({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState(0);
+  const [closing, setClosing] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const startXRef = useRef(0);
+  const draggingRef = useRef(false);
+  const widthRef = useRef(0);
+  const last = step === ONBOARDING_STEPS.length - 1;
+
+  const close = () => { setClosing(true); window.setTimeout(onClose, 260); };
+  const goTo = (next: number) => setStep(Math.max(0, Math.min(ONBOARDING_STEPS.length - 1, next)));
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    widthRef.current = trackRef.current?.clientWidth || 1;
+    startXRef.current = e.clientX;
+    draggingRef.current = true;
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    let delta = e.clientX - startXRef.current;
+    // Rubber-band resistance at the first/last slide instead of dragging past the end into
+    // nothing — a stiff wall there would feel broken, but full free travel invites overscrolling.
+    if ((step === 0 && delta > 0) || (last && delta < 0)) delta *= 0.35;
+    setDragX(delta);
+  };
+  const release = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setDragging(false);
+    const threshold = widthRef.current * 0.18;
+    if (dragX < -threshold) goTo(step + 1);
+    else if (dragX > threshold) goTo(step - 1);
+    setDragX(0);
+  };
+
+  return <div className={`onboarding-backdrop${closing ? " closing" : ""}`}>
+    <div className="onboarding-card">
+      <button type="button" className="onboarding-skip" onClick={close}>Skip</button>
+      <div
+        className="onboarding-track"
+        ref={trackRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={release}
+        onPointerCancel={release}
+        style={{ transform: `translateX(calc(${-step * 100}% + ${dragX}px))`, transition: dragging ? "none" : "transform .5s cubic-bezier(.22,.8,.24,1)" }}
+      >
+        {ONBOARDING_STEPS.map((s, i) => <div className="onboarding-slide" key={i}>
+          <div className="onboarding-art">
+            {s.kind === "logo" && <img src="/logo" alt="" className="onboarding-logo" />}
+            {s.kind === "camera" && <div className="onboarding-icon"><Camera size={44} /></div>}
+            {s.kind === "barcode" && <div className="onboarding-icon"><Barcode size={44} /></div>}
+            {s.kind === "detail" && <div className="onboarding-icon"><Info size={44} /></div>}
+            {s.kind === "score" && <div className="onboarding-score-demo"><div className="score-ring grade-a"><b>92</b><small>/ 100</small><em>A</em></div></div>}
+          </div>
+          <h2>{s.title}</h2>
+          <span>{s.body}</span>
+        </div>)}
+      </div>
+      <div className="onboarding-dots">{ONBOARDING_STEPS.map((_, i) => <button type="button" key={i} className={`onboarding-dot${i === step ? " active" : ""}`} onClick={() => goTo(i)} aria-label={`Go to slide ${i + 1}`} />)}</div>
+      <div className="onboarding-nav">
+        {step > 0 ? <button type="button" className="onboarding-back" onClick={() => goTo(step - 1)}><ArrowLeft size={18} /></button> : <span />}
+        {last
+          ? <button type="button" className="onboarding-next onboarding-cta" onClick={close}>Get started <ArrowRight size={17} /></button>
+          : <button type="button" className="onboarding-next" onClick={() => goTo(step + 1)}>Next <ArrowRight size={17} /></button>}
+      </div>
+    </div>
+  </div>;
+}
+
+function Help({ onClose, onTutorial }: { onClose: () => void; onTutorial: () => void }) {
   const [closing, setClosing] = useState(false);
   const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
-  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p><p className="help-credit">Made by Rishaan Mehta</p></section></div>;
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><Leaf size={24} fill="currentColor" /><h2>Quick scan guide</h2><p><b>Food:</b> center your meal, then tap the large scan button.</p><p><b>Barcode:</b> switch modes and hold the code inside the frame—it scans automatically.</p><p className="help-note">Scores are helpful estimates, not medical advice.</p><button type="button" className="help-tutorial-btn" onClick={onTutorial}><Sparkles size={15} /> Replay tutorial</button><p className="help-credit">Made by Rishaan Mehta</p></section></div>;
 }
