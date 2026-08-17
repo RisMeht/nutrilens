@@ -30,6 +30,21 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           the very first photo on every screen, not just the first page load. */}
       <link rel="preconnect" href="https://images.openfoodfacts.org" />
       <link rel="preconnect" href="https://upload.wikimedia.org" />
+      {/* viewport-fit=cover is deliberately absent from the `viewport` export above — combining
+          it with this app's 100vh/100svh layout broke the installed Safari PWA on a real device
+          (see that export's comment). But the iOS app (Capacitor, capacitor.config.ts) runs the
+          exact same page in a WKWebView with no browser chrome at all, so Safari's dynamic-toolbar
+          bug can't happen there — and it separately NEEDS viewport-fit=cover, since that's what
+          makes env(safe-area-inset-*) report real values instead of always 0, which the app's
+          header/topbar padding now uses to clear the notch/Dynamic Island (see overrides.css).
+          Capacitor's native bridge injects `window.Capacitor` before any page script runs, so
+          this can reliably tell the two contexts apart and only touch the meta tag in the one
+          that needs it — regular Safari/PWA visitors are completely unaffected. */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `(function(){try{var C=window.Capacitor;if(C&&C.isNativePlatform&&C.isNativePlatform()){var m=document.querySelector('meta[name="viewport"]');if(m){if(m.content.indexOf('viewport-fit=cover')===-1)m.content+=', viewport-fit=cover';}else{m=document.createElement('meta');m.name='viewport';m.content='width=device-width, initial-scale=1, viewport-fit=cover';document.head.appendChild(m);}}}catch(e){}})();`
+        }}
+      />
     </head>
     <body suppressHydrationWarning>{children}</body>
   </html>;

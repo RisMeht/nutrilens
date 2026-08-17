@@ -21,11 +21,17 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
    to fight with 100vh/100svh badly enough on a real device to break the footer layout entirely
    (reverted in layout.tsx). A generous fixed padding is the less elegant but safe fallback:
    works identically whether or not the browser ever reports real inset values. */
-header{padding-top:50px}
+/* env(safe-area-inset-top) only reports a real (non-zero) value when the page's viewport meta
+   includes viewport-fit=cover — deliberately NOT set globally (see layout.tsx) since it broke
+   the installed Safari PWA before, so it's toggled on only inside the native iOS app (see the
+   inline script in layout.tsx). There it makes max() grow past the plain-pixel floor to clear
+   whatever the actual notch/Dynamic Island height is; everywhere else env() is just 0 and this
+   is identical to the fixed value it replaces. */
+header{padding-top:max(50px,env(safe-area-inset-top))}
 /* Home screen: icon+wordmark up top, then a large plate/grade hero dominating the middle of
    the screen (matching the reference inspo's layout — branding above, big hero visual below),
    swipe-to-scan pill at the bottom as the sole entry point. Top bar only holds the help button. */
-.home-topbar{position:absolute;z-index:2;top:0;left:0;right:0;display:flex;align-items:center;justify-content:flex-end;padding:50px clamp(22px,5vw,40px) 0}
+.home-topbar{position:absolute;z-index:2;top:0;left:0;right:0;display:flex;align-items:center;justify-content:flex-end;padding:max(50px,env(safe-area-inset-top)) clamp(22px,5vw,40px) 0}
 /* Hand-picked top:X% positioning previously collided on short viewports — a flex column
    between the top bar and the swipe button centers the whole stack regardless of height. */
 .home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(26px,5vh,46px)}
@@ -138,8 +144,8 @@ header{padding-top:50px}
    phone — the frame's bottom corners can run straight into the mode-switch pill instead of
    clearing it. Pulling the frame further up specifically when height is tight (independent of
    width) keeps real clearance regardless of how much of the screen the browser itself is using. */
-@media(max-height:720px){header{padding-top:36px}.top-copy{top:max(6%,108px)}.focus-frame{top:38%}.camera-empty{top:38%}}
-@media(max-height:620px){header{padding-top:30px}.top-copy{top:max(4%,98px)}.focus-frame{top:34%}.camera-empty{top:34%}}
+@media(max-height:720px){header{padding-top:max(36px,env(safe-area-inset-top))}.top-copy{top:max(6%,108px)}.focus-frame{top:38%}.camera-empty{top:38%}}
+@media(max-height:620px){header{padding-top:max(30px,env(safe-area-inset-top))}.top-copy{top:max(4%,98px)}.focus-frame{top:34%}.camera-empty{top:34%}}
 /* The History/Search buttons flanking the mode-switch, plus its own button padding, were sized
    for desktop's extra breathing room — on a narrow phone (iPhone SE-width and up) that combined
    width ran past the screen edge. Tighter side-button size/gap and mode-switch padding keep the

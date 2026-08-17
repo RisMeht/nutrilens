@@ -18,15 +18,14 @@ const config: CapacitorConfig = {
     allowNavigation: ['nurafood.vercel.app']
   },
   ios: {
-    // The web app's own layout doesn't use env(safe-area-inset-*) CSS — it uses fixed pixel
-    // padding calibrated for how Mobile Safari's chrome behaves, from back when this was purely
-    // a browser-based PWA. `contentInset: 'never'` told the native WebView to render fully
-    // edge-to-edge (no notch/status-bar inset at all), which is right for an app that positions
-    // its own content via safe-area CSS, but wrong here — it left the fixed-padding layout with
-    // nothing accounting for the notch, so content rendered up under the status bar/island.
-    // 'automatic' has the native WebView itself inset content below the notch/status bar,
-    // which is what the fixed-padding layout was actually designed against.
-    contentInset: 'automatic'
+    // 'automatic' (tried briefly) has UIKit add real inset margins around the web content —
+    // which render as solid native-colored bars above and below it, not just extra breathing
+    // room. 'never' keeps the WebView edge-to-edge instead, so the page's own background/camera
+    // preview can extend under the notch and home indicator the way a normal full-screen app
+    // does; the app is made notch-aware entirely through its own CSS instead (see globals.css/
+    // layout.tsx — env(safe-area-inset-*), enabled only inside the native app via a runtime
+    // viewport-fit=cover toggle so it can't affect the separate Mobile Safari PWA experience).
+    contentInset: 'never'
   }
 };
 
