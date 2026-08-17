@@ -614,7 +614,11 @@ export default function Home() {
       setError("");
       addHistoryEntry(r).catch(() => {});
     } catch {
-      /* keep showing the current result — the tap just silently didn't pan out */
+      // Falls back to a name search instead of doing nothing — covers the rare case where a
+      // swap's barcode fails to resolve despite already being pre-verified server-side (a
+      // network hiccup, or the listing getting pulled between verification and this tap).
+      setTab("search");
+      setSearchSeed(item.name);
     } finally {
       setAltSelecting(null);
     }

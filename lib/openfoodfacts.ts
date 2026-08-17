@@ -105,6 +105,20 @@ const namesOverlap = (a: string, b: string): boolean => {
   return significantWords(b).some((w) => wordsA.has(w));
 };
 
+// Fraction of each name's significant words shared with the other (Jaccard over word sets).
+// Used two ways in findBetterSwaps: a ratio of 0 means the candidate shares nothing with the
+// scanned product (an unrelated result OFF's free-text search matched on noise), while a very
+// high ratio means it's essentially the same product under a different barcode (a regional or
+// pack-size variant) rather than an actual alternative worth suggesting.
+const nameSimilarityRatio = (a: string, b: string): number => {
+  const wordsA = new Set(significantWords(a));
+  const wordsB = new Set(significantWords(b));
+  if (!wordsA.size || !wordsB.size) return 0;
+  let shared = 0;
+  wordsA.forEach((w) => { if (wordsB.has(w)) shared += 1; });
+  return shared / new Set([...wordsA, ...wordsB]).size;
+};
+
 const categoryOverlap = (a: unknown, b: unknown) => {
   const categoriesA = Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : [];
   const categoriesB = Array.isArray(b) ? b.filter((x): x is string => typeof x === "string") : [];
@@ -155,7 +169,7 @@ export const findBetterSwaps = async ({
   const data = await response.json();
   const products: Record<string, unknown>[] = Array.isArray(data?.hits) ? data.hits : [];
 
-  return products
+  const ranked = products
     .map((item) => {
       const code = typeof item.code === "string" ? item.code : "";
       if (!code || code === productCode) return null;
@@ -187,10 +201,36 @@ export const findBetterSwaps = async ({
       // itself is usually English too, but product_name_en is the more reliable field when a
       // listing still carries a non-English product_name alongside it.
       const name = (typeof item.product_name_en === "string" && item.product_name_en.trim()) || (typeof item.product_name === "string" && item.product_name.trim()) || "Healthier option";
+
+      // Unlike enrichAlternativesWithImages (AI-suggested names), this search's query IS the
+      // scanned product's own name, so OFF's free-text relevance ranking can and does return
+      // results that share barely any actual relationship with it (a multi-word name search
+      // partially matching on one common word) — those used to get accepted as long as their
+      // nutrition numbers looked better, producing "swaps" for a completely different food.
+      // A similarity of 0 catches that. A very high similarity instead means the candidate is
+      // essentially the SAME product (a regional import or different pack size, just a
+      // different barcode) rather than a genuine alternative, which is the other complaint this
+      // guards against.
+      const similarity = nameSimilarityRatio(productName, name);
+      if (similarity === 0 || similarity >= 0.72) return null;
+
       return { name, image, code, grade: grade === "?" ? undefined : grade, improvement };
     })
     .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => Boolean(item && item.improvement > 1.5))
-    .sort((a, b) => b.improvement - a.improvement)
+    .sort((a, b) => b.improvement - a.improvement);
+
+  // Open Food Facts' search index can lag or disagree with its own canonical product database
+  // — a code showing up in a search hit doesn't guarantee /api/v2/product/<code> actually
+  // resolves it (deleted, merged, or malformed entries stay searchable long after they stop
+  // being fetchable that way). Verifying the top-ranked candidates against the canonical
+  // endpoint before returning them means a tapped swap always opens instead of silently doing
+  // nothing, which is what a stale index entry looked like from the user's side.
+  const verified = await Promise.all(
+    ranked.slice(0, 8).map(async (candidate) => ((await fetchOpenFoodFactsProduct(candidate.code)) ? candidate : null))
+  );
+
+  return verified
+    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => item !== null)
     .slice(0, 4)
     .map(({ name, image, code, grade }) => ({ name, image, code, grade }));
 };
@@ -274,7 +314,14 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
         : "";
       // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
       // real full result later (Recommendations) rather than just shown as a static image.
-      const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
+      // Open Food Facts' search index can surface a code that its own canonical product
+      // endpoint no longer resolves (deleted, merged, or malformed entries stay searchable
+      // after they stop being fetchable) — verifying it here means a tapped swap always opens
+      // instead of silently doing nothing, which is what a stale index entry looked like from
+      // the user's side. A failed verification just drops the code, not the whole swap: the
+      // tile still shows with its real name/photo and falls back to a name search on tap.
+      const rawCode = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
+      const code = rawCode && (await fetchOpenFoodFactsProduct(rawCode)) ? rawCode : undefined;
       const grade = withImage ? gradeFromNutriments((withImage.nutriments || {}) as Record<string, unknown>, withImage.nova_group) : "?";
       const gradeOut = grade === "?" ? undefined : grade;
       // Display the matched product's OWN name rather than the AI's freeform suggestion once a
