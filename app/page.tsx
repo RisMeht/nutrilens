@@ -1,7 +1,6 @@
 "use client";
 
-import { BrowserMultiFormatReader } from "@zxing/browser";
-import { DecodeHintType } from "@zxing/library";
+import { readBarcodes, prepareZXingModule, type ReaderOptions } from "zxing-wasm/reader";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -102,14 +101,26 @@ const normalizeAlternatives = (alts?: unknown): Alternative[] => {
     .filter((item): item is Alternative => item !== null);
 };
 
-// A food photo (live shutter or gallery pick) often has the product's own barcode sitting
-// right there in frame — trying a quick decode against it before falling back to the AI photo
-// analysis means those scans get the same barcode-sourced, per-100g-accurate nutrition data as
-// scanning the barcode directly, instead of the AI's best guess from the picture alone. One
-// reader instance is reused across attempts rather than constructed fresh each time.
-const photoBarcodeReader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
-const detectBarcodeInCanvas = (canvas: HTMLCanvasElement): string | null => {
-  try { return photoBarcodeReader.decodeFromCanvas(canvas).getText(); } catch { return null; }
+// Used everywhere a barcode gets decoded from a still canvas: the live scan-loop fallback (for
+// browsers without native BarcodeDetector) and the food-photo auto-detect below. zxing-wasm is
+// a WebAssembly build of the actual zxing-cpp engine — the real, actively-developed C++ library
+// most serious barcode readers are built on — rather than zxing-js's pure-JS reimplementation,
+// which independent benchmarks put meaningfully behind it on both speed and read accuracy.
+// "AllRetail" covers exactly the barcode families found on packaged food (EAN/UPC/etc), so it's
+// not wasting time trying formats that will never appear on a grocery product.
+const RETAIL_BARCODE_OPTIONS: ReaderOptions = { tryHarder: true, formats: ["AllRetail"], maxNumberOfSymbols: 1 };
+// Kicks off the (network-fetched, then cached) WASM module load as soon as the app starts
+// rather than waiting for the first decode attempt, so barcode mode's first scan isn't stuck
+// behind a cold module-load delay on top of everything else.
+prepareZXingModule({ fireImmediately: true });
+const readBarcodeFromCanvas = async (canvas: HTMLCanvasElement): Promise<string | null> => {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  try {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const results = await readBarcodes(imageData, RETAIL_BARCODE_OPTIONS);
+    return results[0]?.text || null;
+  } catch { return null; }
 };
 
 // Shared by the live barcode-scan flow and the Browse screen (picking any product from a
@@ -390,14 +401,20 @@ export default function Home() {
   // Attaches/detaches the barcode decode loop to the already-live video element — no camera
   // restart involved, so flipping between Food and Barcode is instant and glitch-free.
   //
-  // Prefers the browser's native BarcodeDetector (Shape Detection API) when available — it runs
-  // against the live video element directly (no manual canvas draw needed), is hardware
-  // accelerated, reads reliably from much further away/at more of an angle than the JS decoder
-  // ever could, and hands back a real bounding box for free, which drives the live scan-box
-  // overlay. Chromium-based browsers (Chrome/Edge, most Android WebViews) support it; Safari
-  // and Firefox don't as of writing, so those fall back to the zxing canvas-polling loop —
-  // still noticeably tightened up from before (faster interval, higher-resolution crop) even
-  // though it can't produce a bounding box cheaply enough to justify trying.
+  // Prefers the browser's native BarcodeDetector (Shape Detection API) when available — on
+  // Chromium (Chrome/Edge, most Android WebViews) it's actually backed by Google's ML Kit under
+  // the hood, the same barcode engine real native apps use, so this path is about as good as a
+  // web page can possibly get. It runs against the live video element directly (no manual
+  // canvas draw needed), is hardware accelerated, reads reliably from much further away/at more
+  // of an angle than a JS decoder ever could, and hands back a real bounding box for free, which
+  // drives the live scan-box overlay.
+  //
+  // Safari/iOS has no native barcode API at all (an Apple platform gap, not something fixable
+  // here) and Firefox doesn't implement this API either, so both fall back to a WASM-based
+  // decode loop below — using zxing-wasm (the real zxing-cpp engine compiled to WebAssembly)
+  // rather than a pure-JS decoder, since that's a meaningful, independently-benchmarked step up
+  // in both speed and read accuracy over plain JS. It can't produce a bounding box cheaply
+  // enough to justify trying, but does get the same tighter frame-crop treatment.
   useEffect(() => {
     if (mode !== "barcode" || !cameraOn || !cameraReady || !video.current) { setBarcodeBox(null); return; }
     let cancelled = false, timeoutId = 0, raf = 0;
@@ -444,11 +461,10 @@ export default function Home() {
       return () => { cancelled = true; window.clearTimeout(timeoutId); cancelAnimationFrame(raf); setBarcodeBox(null); };
     }
 
-    const reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const SCAN_WIDTH = 900;
-    const tick = () => {
+    const tick = async () => {
       if (cancelled) return;
       const el = video.current;
       const frameEl = frameRef.current;
@@ -473,13 +489,11 @@ export default function Home() {
           canvas.width = SCAN_WIDTH;
           canvas.height = Math.round(SCAN_WIDTH * (sh / sw));
           ctx.drawImage(el, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-          try {
-            const result = reader.decodeFromCanvas(canvas);
-            if (result && !cancelled) { cancelled = true; barcodeResult(result.getText()); return; }
-          } catch { /* no barcode in this frame yet — keep scanning */ }
+          const code = await readBarcodeFromCanvas(canvas);
+          if (code && !cancelled) { cancelled = true; barcodeResult(code); return; }
         }
       }
-      timeoutId = window.setTimeout(tick, 60);
+      if (!cancelled) timeoutId = window.setTimeout(tick, 60);
     };
     // Waits out the mode-switch CSS transition before the decode loop starts competing for
     // the main thread — starting it immediately was still enough to make the transition (which
@@ -514,7 +528,7 @@ export default function Home() {
   // time) before switching to the same loading spinner barcode mode already uses. A
   // gallery-picked photo has no "aim the camera" moment to justify a beam at all, so it jumps
   // straight to the spinner.
-  const takeFoodScan = () => {
+  const takeFoodScan = async () => {
     const source = video.current;
     if (!source || !source.videoWidth) return imageInput.current?.click();
     const c = document.createElement("canvas"), ratio = Math.min(1, 1400 / source.videoWidth);
@@ -525,7 +539,7 @@ export default function Home() {
     // If the product's own barcode happens to be visible in the food photo, use that instead of
     // the AI's best guess from the picture — same per-100g Open Food Facts data as scanning the
     // barcode directly, so it's strictly more accurate whenever it's available.
-    const code = detectBarcodeInCanvas(c);
+    const code = await readBarcodeFromCanvas(c);
     if (code) { barcodeResult(code); return; }
     analyze(c.toDataURL("image/jpeg", .8));
   };
@@ -538,12 +552,12 @@ export default function Home() {
       // Same barcode-first check as a live shutter capture — a gallery photo can show the
       // product's barcode just as well as the camera can.
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement("canvas"), ratio = Math.min(1, 1400 / img.width);
         canvas.width = Math.round(img.width * ratio);
         canvas.height = Math.round(img.height * ratio);
         canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const code = detectBarcodeInCanvas(canvas);
+        const code = await readBarcodeFromCanvas(canvas);
         if (code) { barcodeResult(code); return; }
         analyze(dataUrl);
       };
