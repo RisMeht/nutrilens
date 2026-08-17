@@ -384,8 +384,12 @@ export default function Home() {
     };
     // Waits out the mode-switch CSS transition before the decode loop starts competing for
     // the main thread — starting it immediately was still enough to make the transition (which
-    // plays over roughly this same window) stutter, even at a downscaled resolution.
-    timeoutId = window.setTimeout(tick, 140);
+    // plays over roughly this same window) stutter, even at a downscaled resolution. The corner
+    // brackets' own transform transition runs .55s (see .focus-frame i in overrides.css); 140ms
+    // was landing well inside that window and still visibly janked the food->barcode direction
+    // specifically (barcode->food has no decode loop competing for the thread, so it was always
+    // smooth) — pushed past the full transition instead.
+    timeoutId = window.setTimeout(tick, 620);
     return () => { cancelled = true; window.clearTimeout(timeoutId); };
   }, [mode, cameraOn, cameraReady, barcodeResult]);
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -503,12 +507,12 @@ export default function Home() {
   if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}>
     <div className="home-topbar"><button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div>
     <div className="home-main">
+      <div className="home-copy"><img className="home-logo" src="/logo" alt="" /><h1>Viva</h1><span>Know what you eat.</span></div>
       <div className="home-hero">
         <div className="home-hero-emoji">🥗</div>
         {lastScan ? <div className="home-hero-chip"><span className={`home-hero-chip-ring grade-${(lastScan.grade || "a").toLowerCase()}`}>{lastScan.grade}</span><div className="home-hero-chip-text"><b>{lastScan.score}</b><small>Last scan</small></div></div>
           : <div className="home-hero-chip"><span className="home-hero-chip-ring">🍃</span><div className="home-hero-chip-text"><b>Scan</b><small>to see your score</small></div></div>}
       </div>
-      <div className="home-copy"><img className="home-logo" src="/logo" alt="" /><h1>Viva</h1><span>Know what you eat.</span></div>
     </div>
     <SwipeEnter onComplete={() => { setHomeLeaving(true); window.setTimeout(() => { setEntered(true); setCameraOn(true); }, 340); }} />
     {helpOpen && <Help onClose={() => setHelpOpen(false)} />}

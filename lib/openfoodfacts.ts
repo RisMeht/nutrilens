@@ -125,10 +125,19 @@ export const findBetterSwaps = async ({
   satFatPer100g: number;
   energyPer100g: number;
 }) => {
+  // Restricting to US-available, English-labeled products (same intent as the Top screen's
+  // category browse below) matters here — an unrestricted name search on OFF's global index
+  // kept surfacing swaps that were foreign-language listings or imports nobody scanning from
+  // the US could actually go buy. Tried folding "AND countries_tags:... AND lang:en" straight
+  // into `q` the same way topProductsForCategory does, but confirmed directly against the API
+  // that this DSL only handles that combination correctly when the free-text part is a single
+  // word or already itself a field:value clause — a multi-word product name search (the normal
+  // case here) silently drops to zero hits instead of filtering. Filtering client-side on the
+  // returned countries_tags/lang fields (added below) avoids that broken query path entirely.
   const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
   searchUrl.searchParams.set("q", productName || "food");
   searchUrl.searchParams.set("page_size", "30");
-  searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriments,nova_group");
+  searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,countries_tags,lang,nutriments,nova_group");
 
   const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } })).catch(() => null);
   if (!response?.ok) return [] as Array<{ name: string; image: string; code: string; grade?: string }>;
@@ -139,6 +148,8 @@ export const findBetterSwaps = async ({
     .map((item) => {
       const code = typeof item.code === "string" ? item.code : "";
       if (!code || code === productCode) return null;
+      const countries = Array.isArray(item.countries_tags) ? item.countries_tags : [];
+      if (item.lang !== "en" || !countries.includes("en:united-states")) return null;
       const nutriments = (item.nutriments || {}) as Record<string, unknown>;
       // Compare on the same per-100g basis as the scanned product — mixing a
       // per-serving reading for one side with a per-100g reading for the other
@@ -161,7 +172,10 @@ export const findBetterSwaps = async ({
         (6 - nutriRank(grade)) +
         overlapScore;
 
-      const name = (typeof item.product_name === "string" && item.product_name.trim()) || (typeof item.product_name_en === "string" && item.product_name_en.trim()) || "Healthier option";
+      // Prefer the English name field first — with lang:en now required above, product_name
+      // itself is usually English too, but product_name_en is the more reliable field when a
+      // listing still carries a non-English product_name alongside it.
+      const name = (typeof item.product_name_en === "string" && item.product_name_en.trim()) || (typeof item.product_name === "string" && item.product_name.trim()) || "Healthier option";
       return { name, image, code, grade: grade === "?" ? undefined : grade, improvement };
     })
     .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => Boolean(item && item.improvement > 1.5))
@@ -215,10 +229,16 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
   const resolved = await Promise.all(
     names.map(async (name) => {
+      // Same US-available, English-labeled restriction as findBetterSwaps above — this match's
+      // barcode becomes a tappable result (Recs/results-screen swap), so it needs to be a real
+      // product someone in the US could actually go buy, not just any global listing that
+      // happens to share the AI-suggested name. Filtered client-side rather than folded into
+      // `q` — see the comment on findBetterSwaps above for why the combined query silently
+      // zeroes out results for any multi-word name.
       const searchUrl = new URL(`${OFF_SEARCH_BASE}/search`);
       searchUrl.searchParams.set("q", name);
       searchUrl.searchParams.set("page_size", "5");
-      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,nutriments,nova_group");
+      searchUrl.searchParams.set("fields", "code,product_name,product_name_en,image_front_small_url,image_front_url,categories_tags,countries_tags,lang,nutriments,nova_group");
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
@@ -226,10 +246,12 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       // AND actually looks like a food product — previously took the first result with ANY
       // photo regardless of relevance or category, which could land on an unrelated
       // cosmetics/personal-care product that happened to share a word with the food name.
-      const withImage = products.find((item) =>
-        ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url)) &&
-        looksLikeFood(item.categories_tags)
-      );
+      const withImage = products.find((item) => {
+        const countries = Array.isArray(item.countries_tags) ? item.countries_tags : [];
+        if (item.lang !== "en" || !countries.includes("en:united-states")) return false;
+        return ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url)) &&
+          looksLikeFood(item.categories_tags);
+      });
       const rawOffImage = withImage
         ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
           (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
