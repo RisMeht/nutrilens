@@ -188,6 +188,14 @@ export const findBetterSwaps = async ({
       const image = toSizedImage(rawImage, GRID_IMAGE_SIZE);
 
       const overlapScore = categoryOverlap(categories, item.categories_tags);
+      // Name similarity alone isn't enough to keep a swap in the same food category — "chocolate
+      // dough protein bar" and "chocolate chip cookie" share the word "chocolate" but are
+      // completely different foods, one of them a much less healthy swap than nutrition numbers
+      // alone would suggest matters. When both products actually carry category tags, requiring
+      // real overlap keeps a protein bar recommending other protein bars (whatever the flavor),
+      // not just anything with a similar-sounding name.
+      const hasCategoryData = Array.isArray(categories) && categories.length > 0 && Array.isArray(item.categories_tags) && item.categories_tags.length > 0;
+      if (hasCategoryData && overlapScore === 0) return null;
       const grade = gradeFromNutriments(nutriments, item.nova_group);
       const improvement =
         (sugarPer100g - sugar) * 2 +

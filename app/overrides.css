@@ -35,14 +35,33 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
 /* Hand-picked top:X% positioning previously collided on short viewports — a flex column
    between the top bar and the swipe button centers the whole stack regardless of height. */
 .home-main{position:absolute;z-index:1;top:96px;bottom:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(26px,5vh,46px)}
-.home-logo{width:72px;height:72px;border-radius:20px;display:block;margin:0 auto 16px;box-shadow:0 10px 24px #06150d80,0 0 0 1px #ffffff14;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both}
+.home-logo{width:72px;height:72px;border-radius:20px;display:block;margin:0 auto 16px;box-shadow:0 10px 24px #06150d80,0 0 0 1px #ffffff14;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both,home-logo-glow 3.6s ease-in-out 1.2s infinite}
+@keyframes home-logo-glow{0%,100%{box-shadow:0 10px 24px #06150d80,0 0 0 1px #ffffff14,0 0 0 0 #baff5900}50%{box-shadow:0 10px 24px #06150d80,0 0 0 1px #ffffff2a,0 0 30px 4px #baff5955}}
+/* Ambient drifting glow behind the whole home screen, in place of the flat, static blob
+   globals.css already draws (that one just gets its own motion added below, via the same
+   `:after` selector — every property it already sets stays exactly as-is, only `animation` is
+   new) plus a second smaller one for a bit more depth. Both sit at z-index:auto, so the
+   z-index:1/2 content stacked on top (home-main, home-topbar, swipe-enter) always paints over
+   them regardless of DOM order. */
+.home-screen:after{animation:home-blob-drift-a 15s ease-in-out infinite}
+.home-screen:before{content:"";position:absolute;width:420px;height:420px;left:-180px;top:-160px;border-radius:50%;background:#2f6b3a;filter:blur(120px);opacity:.16;animation:home-blob-drift-b 18s ease-in-out infinite}
+@keyframes home-blob-drift-a{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-26px,32px) scale(1.12)}}
+@keyframes home-blob-drift-b{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(24px,-22px) scale(1.15)}}
 .home-copy{position:static;left:auto;transform:none;width:min(760px,calc(100% - 40px));text-align:center;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both .05s}
 .home-copy h1{font-size:clamp(52px,12vw,88px);white-space:normal;line-height:.95;letter-spacing:-.05em;margin:0;color:#f7faef}
 .home-copy>span{display:block;margin-top:14px;color:#c5d1c0;font-size:18px;letter-spacing:-.01em}
 /* Hero shrunk relative to the title/tagline above it — it reads as a supporting visual now,
    not the dominant element, with a subtle fade/rise-in to feel less like it just appeared. */
-.home-hero{position:relative;width:min(220px,50vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 26px 60px #06150d90,inset 0 0 0 1px #ffffff1a;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both .12s}
-.home-hero-emoji{font-size:clamp(52px,12.5vw,76px);filter:drop-shadow(0 0 32px #baff5966)}
+/* home-rise (opacity/transform, one-shot entrance) and home-glow-pulse (box-shadow, looping)
+   are free to run at the same time on the same element since they animate different
+   properties — two animations sharing a property would fight (the later-listed one wins
+   outright for its whole active window), but there's no overlap here. */
+.home-hero{position:relative;width:min(220px,50vw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 34% 28%,#4c7a3f 0,#1d3c22 55%,#0e2015 100%);display:grid;place-items:center;box-shadow:0 26px 60px #06150d90,inset 0 0 0 1px #ffffff1a;animation:home-rise .6s cubic-bezier(.2,.8,.2,1) both .12s,home-glow-pulse 3.6s ease-in-out .8s infinite}
+@keyframes home-glow-pulse{0%,100%{box-shadow:0 26px 60px #06150d90,inset 0 0 0 1px #ffffff1a,0 0 0 0 #baff5900}50%{box-shadow:0 26px 60px #06150d90,inset 0 0 0 1px #ffffff2e,0 0 46px 6px #baff5940}}
+/* The emoji is a plain, never-otherwise-animated child of .home-hero, so it can carry its own
+   continuous float+glow-pulse without any risk of clashing with the parent's entrance animation. */
+.home-hero-emoji{font-size:clamp(52px,12.5vw,76px);filter:drop-shadow(0 0 32px #baff5966);display:inline-block;animation:home-emoji-float 5s ease-in-out 1s infinite}
+@keyframes home-emoji-float{0%,100%{transform:translateY(0);filter:drop-shadow(0 0 32px #baff5966)}50%{transform:translateY(-9px);filter:drop-shadow(0 0 44px #baff59a0)}}
 .home-hero-chip{position:absolute;left:-12%;bottom:6%;display:flex;align-items:center;gap:9px;background:#112016ee;border:1px solid #ffffff1c;border-radius:15px;padding:8px 15px 8px 8px;box-shadow:0 14px 30px #06150dcc;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
 .home-hero-chip-ring{flex:none;width:32px;height:32px;border-radius:50%;background:#5fae4a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
 .home-hero-chip-text{display:grid;line-height:1.15}
@@ -186,7 +205,15 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
 .onboarding-next{display:flex;align-items:center;gap:8px;border:0;background:#baff59;color:#153d1f;font:700 15px "DM Sans";padding:14px 26px;border-radius:14px;cursor:pointer;margin-left:auto;transition:filter .15s ease,transform .15s ease}
 .onboarding-next:hover{filter:brightness(1.08)}
 .onboarding-next:active{transform:scale(.97)}
-.onboarding-cta{padding:14px 30px}.help-card button{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
+.onboarding-cta{padding:14px 30px}
+/* Was a blanket `.help-card button` rule intended only for the small round X close button —
+   with the Help card no longer holding a single button (the new "Replay tutorial" button below
+   also lives inside it), that generic selector was absolutely positioning/circle-clipping BOTH
+   buttons on top of each other in the same top-right corner. Scoped to :first-child, which the
+   close button always is across every .help-card variant (Help, additive detail, nutrient
+   detail), so it no longer catches any button added after it. */
+.help-card>button:first-child{position:absolute;right:15px;top:15px;border:0;border-radius:50%;background:#dce7d8;color:#18311d;width:34px;height:34px;display:grid;place-items:center;cursor:pointer}
+.scan-state{animation:sheet-in .25s ease}.spin{animation:spin .8s linear infinite}.ai-status{display:flex;align-items:center;gap:8px;background:#e6efe2;color:#2e5a34;padding:10px 12px;border-radius:10px;font-size:13px;margin:8px 0 4px}
 /* Better Swaps tiles are now real buttons (tap to open that swap's own full result) rather
    than static article cards — reset the browser's default button chrome so they still look
    exactly like the plain photo tiles they replace. */
@@ -446,10 +473,23 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
 .risk-pill.risk-red{background:#fbe9e5;color:#8c3a2b}
 .additive-detail-card p:not(.help-note){white-space:pre-line}
 
-/* Header flash/torch toggle. */
+/* Header flash/torch/settings toggle row. */
 .header-actions{display:flex;align-items:center;gap:10px}
 .torch{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:background .18s ease,color .18s ease}
 .torch.on{background:#baff59;color:#153d1f}
+.settings{border:0;background:#142d1cce;color:#eff8e8;cursor:pointer;display:grid;place-items:center;width:45px;height:45px;border-radius:50%;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);transition:transform .18s ease,filter .18s ease}
+.settings:hover,.settings:active{transform:translateY(-2px);filter:brightness(1.2)}
+
+/* Settings panel — reuses the Help dialog's own card/backdrop/animation. The one setting so
+   far (haptic feedback) is a full-width row with a right-aligned iOS-style toggle switch. */
+.settings-row{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;margin-top:16px;padding:14px 4px;border:0;background:transparent;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.settings-row>div{display:grid;gap:2px}
+.settings-row b{font-size:14px;font-weight:600;color:#18311d}
+.settings-row span{font-size:12px;color:#61735e;line-height:1.4}
+.toggle-switch{flex:none;width:46px;height:27px;border-radius:999px;background:#d5e0d0;position:relative;transition:background .2s ease}
+.toggle-switch em{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;box-shadow:0 2px 5px #0003;font-style:normal;transition:transform .2s cubic-bezier(.3,.7,.3,1)}
+.settings-row.on .toggle-switch{background:#5fae4a}
+.settings-row.on .toggle-switch em{transform:translateX(19px)}
 
 /* Persistent bottom navigation — History / Recs / Scan / Top / Search — sits above every
    screen (camera view and every full-page tab alike) so switching sections never needs a trip

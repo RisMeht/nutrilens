@@ -2,8 +2,9 @@
 
 import { readBarcodes, prepareZXingModule, type ReaderOptions } from "zxing-wasm/reader";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Settings as SettingsIcon, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { getHapticsEnabled, hapticResult, hapticScanStart, hapticSoft, hapticTap, setHapticsEnabled } from "../lib/haptics";
 
 // The Shape Detection API's BarcodeDetector isn't in TypeScript's DOM lib yet — minimal shape
 // for the one method/fields actually used (native detect() call + its bounding box/rawValue).
@@ -246,10 +247,20 @@ export default function Home() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   useEffect(() => { try { if (!localStorage.getItem(ONBOARDED_KEY)) setOnboardingOpen(true); } catch { /* storage unavailable — just skip the tutorial rather than block the app */ } }, []);
   const closeOnboarding = () => { try { localStorage.setItem(ONBOARDED_KEY, "1"); } catch { /* best-effort */ } setOnboardingOpen(false); };
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hapticsOn, setHapticsOnState] = useState(true);
+  useEffect(() => { setHapticsOnState(getHapticsEnabled()); }, []);
+  const toggleHaptics = () => { const next = !hapticsOn; setHapticsEnabled(next); setHapticsOnState(next); };
   // "pulse" = the brief one-shot beam right after a live shutter capture; "processing" = the
   // spinner for the remainder of the AI request (also the immediate state for a gallery pick,
   // which skips the pulse entirely — see file()/takeFoodScan() below).
   const [captureState, setCaptureState] = useState<"idle" | "pulse" | "processing">("idle");
+  // Buzzes exactly once the scan spinner actually appears on screen — mirrors the same
+  // condition the spinner's own JSX below uses (mode==="barcode" is instant, food mode instead
+  // waits out the one-shot capture-beam pulse first) — rather than the moment a scan merely
+  // *starts*, which for a live food capture is up to 1.7s before anything visibly changes.
+  const scanSpinnerShowing = loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse"));
+  useEffect(() => { if (scanSpinnerShowing) hapticScanStart(); }, [scanSpinnerShowing]);
   const [sheetClosing, setSheetClosing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
@@ -269,7 +280,7 @@ export default function Home() {
   const [altSelecting, setAltSelecting] = useState<string | null>(null);
   const [lastScan, setLastScan] = useState<HistoryEntry | null>(null);
   useEffect(() => { setLastScan(loadHistory()[0] || null); }, []);
-  const openTab = (next: Tab) => { if (next === "history") { setHistoryList(loadHistory()); setClearArmed(false); } setTab(next); };
+  const openTab = (next: Tab) => { hapticSoft(); if (next === "history") { setHistoryList(loadHistory()); setClearArmed(false); } setTab(next); };
   const removeHistoryEntry = (id: string) => { const next = loadHistory().filter(e => e.historyId !== id); persistHistory(next); setHistoryList(next); };
   const clearAllHistory = () => {
     if (!clearArmed) { setClearArmed(true); window.setTimeout(() => setClearArmed(false), 3000); return; }
@@ -325,6 +336,7 @@ export default function Home() {
   const toggleTorch = useCallback(async () => {
     const track = stream.current?.getVideoTracks()[0];
     if (!track) return;
+    hapticTap();
     const next = !torchOn;
     try { await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] }); setTorchOn(next); } catch { /* some browsers advertise torch support but reject it anyway */ }
   }, [torchOn]);
@@ -639,7 +651,7 @@ export default function Home() {
   // that, so tapping a Better Swap while scrolled down on the current product used to leave the
   // NEW product's page opened mid-scroll instead of at the top.
   const resultContentRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { resultContentRef.current?.scrollTo({ top: 0 }); }, [result]);
+  useEffect(() => { resultContentRef.current?.scrollTo({ top: 0 }); if (result) hapticResult(); }, [result]);
   // Same canonical-grade self-correction as the browse/top grids (see ProductGrid), applied to
   // Better Swaps specifically since those grades come from the same search-index data.
   const [swapGradeFixes, setSwapGradeFixes] = useState<Record<string, string | null>>({});
@@ -657,7 +669,7 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [result]);
   if (!entered) return <main className={`home-screen${homeLeaving ? " leaving" : ""}`}>
-    <div className="home-topbar"><button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div>
+    <div className="home-topbar"><button className="help" onClick={() => { hapticTap(); setHelpOpen(true); }} aria-label="Help"><CircleHelp size={20} /></button></div>
     <div className="home-main">
       <div className="home-copy"><img className="home-logo" src="/logo" alt="" /><h1>Viva</h1><span>Know what you eat.</span></div>
       <div className="home-hero">
@@ -671,10 +683,10 @@ export default function Home() {
     {onboardingOpen && <Onboarding onClose={closeOnboarding} />}
   </main>;
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
-    <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />Viva</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div></header>
+    <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />Viva</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="settings" onClick={() => { hapticTap(); setSettingsOpen(true); }} aria-label="Settings"><SettingsIcon size={18} /></button><button className="help" onClick={() => { hapticTap(); setHelpOpen(true); }} aria-label="Help"><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
     <div ref={frameRef} className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && !loading && cameraReady && <div className="scan-beam" />}{mode === "food" && loading && captureState === "pulse" && <div className="scan-beam scan-beam-once" />}{loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse")) && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{mode === "barcode" && !loading && barcodeBox && <div className="barcode-box" style={{ left: barcodeBox.left, top: barcodeBox.top, width: barcodeBox.width, height: barcodeBox.height }} />}{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
-    <div className="bottom-panel"><div className="mode-switch" ref={modeSwitchRef}>{modeIndicator.ready && <div className="mode-switch-indicator" style={{ left: modeIndicator.left, width: modeIndicator.width }} />}<button data-mode="food" className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button data-mode="barcode" className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
+    <div className="bottom-panel"><div className="mode-switch" ref={modeSwitchRef}>{modeIndicator.ready && <div className="mode-switch-indicator" style={{ left: modeIndicator.left, width: modeIndicator.width }} />}<button data-mode="food" className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button data-mode="barcode" className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => { hapticTap(); imageInput.current?.click(); }} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
   {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content" ref={resultContentRef}><div className="result-photo-wrap"><div className="result-photo-banner"><Thumb src={result.image || fallbackFoodImage(result.name)} fallback={fallbackFoodImage(result.name)} alt={result.name} eager /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div>{isPoor && concernsBlock}<div className="nutrition-row">{result.facts?.map((fact, i) => <button type="button" key={`${fact.label}-${i}`} onClick={() => setNutrientDetail(fact)}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</button>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">The score above is based on nutrition alone, so it always matches what you see before opening a product. Additives and organic status are shown here for context.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || (!isPoor && result.concerns?.length) || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{!isPoor ? concernsBlock : null}{(() => {
                     // Every tile here needs to both open a real product AND show its actual
@@ -683,7 +695,7 @@ export default function Home() {
                     // to Search instead of opening anything, which read as a dead/broken tile.
                     const clickableAlts = (result.alternatives ?? []).filter((item) => item.code && item.image);
                     return clickableAlts.length ? <div className="alternatives"><strong>{swapsHeading}</strong><div className="alternatives-grid">{clickableAlts.map((item, i) => { const swapGrade = item.code && item.code in swapGradeFixes ? swapGradeFixes[item.code] : item.grade; return <button type="button" key={`${item.name}-${i}`} disabled={!!altSelecting} onClick={() => openAlternative(item)}><div className="alt-img-wrap"><Thumb src={item.image!} fallback={fallbackFoodImage(item.name)} alt={item.name} />{swapGrade && <em className={`swap-grade grade-${swapGrade.toLowerCase()}`}>{swapGrade}</em>}{altSelecting === item.code && <div className="browse-tile-loading"><LoaderCircle className="spin" size={20} /></div>}</div><span>{item.name}</span></button>; })}</div></div> : null;
-                  })()}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} onTutorial={() => { setHelpOpen(false); setOnboardingOpen(true); }} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}{onboardingOpen && <Onboarding onClose={closeOnboarding} />}
+                  })()}</div> : null}<p className="note">{result.caution}</p>{error && <p className="note">{error}</p>}<button className="retry wide" onClick={scanAnotherFood}>Scan another food</button></div>}</div></div>}{helpOpen && <Help onClose={() => setHelpOpen(false)} onTutorial={() => { setHelpOpen(false); setOnboardingOpen(true); }} />}{settingsOpen && <SettingsPanel hapticsOn={hapticsOn} onToggleHaptics={toggleHaptics} onClose={() => setSettingsOpen(false)} />}{additiveDetail && <AdditiveDetail item={additiveDetail} onClose={() => setAdditiveDetail(null)} />}{nutrientDetail && <NutrientDetail fact={nutrientDetail} onClose={() => setNutrientDetail(null)} />}{chatOpen && result && <Chat result={result} onClose={() => setChatOpen(false)} />}{onboardingOpen && <Onboarding onClose={closeOnboarding} />}
   {tab === "history" && <History list={historyList} clearArmed={clearArmed} onClose={() => setTab("scan")} onView={viewHistoryEntry} onDelete={removeHistoryEntry} onClearAll={clearAllHistory} />}
   {tab === "recs" && <Recs onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); }} onSearch={(q) => { setTab("search"); setSearchSeed(q); }} />}
   {tab === "top" && <Top onClose={() => setTab("scan")} onOpenResult={(r) => { setResult(r); setError(""); addHistoryEntry(r).catch(() => {}); }} />}
@@ -1203,6 +1215,21 @@ function Onboarding({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   </div>;
+}
+
+// Reuses the same help-card dialog pattern as Help/AdditiveDetail/NutrientDetail so it reads as
+// the same app, not a bolted-on settings screen. Haptic feedback is the one setting so far —
+// real Taptic Engine feedback only exists inside the native iOS app (see lib/haptics.ts), so
+// the toggle itself has no visible effect in a browser tab, which is expected rather than broken.
+function SettingsPanel({ hapticsOn, onToggleHaptics, onClose }: { hapticsOn: boolean; onToggleHaptics: () => void; onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const close = () => { setClosing(true); window.setTimeout(onClose, 200); };
+  return <div className={`help-backdrop${closing ? " closing" : ""}`} onClick={close}><section className={`help-card${closing ? " closing" : ""}`} onClick={event => event.stopPropagation()}><button onClick={close}><X size={19} /></button><SettingsIcon size={24} /><h2>Settings</h2>
+    <button type="button" className={`settings-row${hapticsOn ? " on" : ""}`} onClick={onToggleHaptics}>
+      <div><b>Haptic feedback</b><span>Feel a tap on scans, results, and buttons</span></div>
+      <i className="toggle-switch"><em /></i>
+    </button>
+  </section></div>;
 }
 
 function Help({ onClose, onTutorial }: { onClose: () => void; onTutorial: () => void }) {
