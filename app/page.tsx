@@ -6,6 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Aperture, ArrowLeft, ArrowRight, ArrowUp, Barcode, Camera, ChevronRight, CircleHelp, Flashlight, History as HistoryIcon, ImagePlus, Info, Leaf, LoaderCircle, MessageCircle, ScanLine, Search, Sparkles, SwitchCamera, Trash2, TrendingUp, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
+// The Shape Detection API's BarcodeDetector isn't in TypeScript's DOM lib yet — minimal shape
+// for the one method/fields actually used (native detect() call + its bounding box/rawValue).
+type BarcodeDetectorLike = { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string; boundingBox: { x: number; y: number; width: number; height: number } }>> };
+
 type Alternative = { name: string; image?: string; code?: string; grade?: string };
 type NutrientRange = { bucket: "low" | "moderate" | "high"; positionPct: number; good: boolean; bad: boolean; highIsGood: boolean };
 type NutritionFact = { label: string; value: string; range?: NutrientRange };
@@ -231,6 +235,11 @@ export default function Home() {
   const [cameraReady, setCameraReady] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
   const [torchOn, setTorchOn] = useState(false), [torchSupported, setTorchSupported] = useState(false);
+  // Live bounding box drawn around a detected-but-not-yet-confirmed barcode, in display pixels
+  // relative to the camera-screen container — only populated on browsers with the native
+  // BarcodeDetector API (see the decode-loop effect below), since that's the only path that
+  // gets a real bounding box essentially for free.
+  const [barcodeBox, setBarcodeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [homeLeaving, setHomeLeaving] = useState(false);
   const [additiveDetail, setAdditiveDetail] = useState<AdditiveFlag | null>(null);
   const [nutrientDetail, setNutrientDetail] = useState<NutritionFact | null>(null);
@@ -365,18 +374,62 @@ export default function Home() {
     return () => { cancelled = true; stream.current?.getTracks().forEach(t => t.stop()); stream.current = null; if (video.current) video.current.srcObject = null; setCameraReady(false); setTorchSupported(false); setTorchOn(false); };
   }, [cameraOn, facing]);
   // Attaches/detaches the barcode decode loop to the already-live video element — no camera
-  // restart involved, so flipping between Food and Barcode is instant and glitch-free. This
-  // draws each frame to a small downscaled canvas itself rather than using zxing's built-in
-  // decodeFromVideoElement loop, which captures at the camera's full resolution (up to
-  // 1920x1080) on every attempt — expensive enough to visibly stutter the mode-switch
-  // animation. A barcode reads fine from a much smaller frame.
+  // restart involved, so flipping between Food and Barcode is instant and glitch-free.
+  //
+  // Prefers the browser's native BarcodeDetector (Shape Detection API) when available — it runs
+  // against the live video element directly (no manual canvas draw needed), is hardware
+  // accelerated, reads reliably from much further away/at more of an angle than the JS decoder
+  // ever could, and hands back a real bounding box for free, which drives the live scan-box
+  // overlay. Chromium-based browsers (Chrome/Edge, most Android WebViews) support it; Safari
+  // and Firefox don't as of writing, so those fall back to the zxing canvas-polling loop —
+  // still noticeably tightened up from before (faster interval, higher-resolution crop) even
+  // though it can't produce a bounding box cheaply enough to justify trying.
   useEffect(() => {
-    if (mode !== "barcode" || !cameraOn || !cameraReady || !video.current) return;
-    let cancelled = false, timeoutId = 0;
+    if (mode !== "barcode" || !cameraOn || !cameraReady || !video.current) { setBarcodeBox(null); return; }
+    let cancelled = false, timeoutId = 0, raf = 0;
+    const NativeDetector = (window as unknown as { BarcodeDetector?: new (opts: { formats: string[] }) => BarcodeDetectorLike }).BarcodeDetector;
+
+    if (NativeDetector) {
+      const detector = new NativeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "codabar"] });
+      const scan = () => {
+        if (cancelled || !video.current) return;
+        detector.detect(video.current).then((codes) => {
+          if (cancelled) return;
+          if (codes.length) {
+            const hit = codes[0];
+            const el = video.current;
+            if (el && el.videoWidth) {
+              // Maps the barcode's bounding box from the video's own pixel space into the
+              // element's displayed CSS size — needed because .camera-feed uses
+              // object-fit:cover, which scales+crops the intrinsic frame rather than showing
+              // it 1:1, so raw video-pixel coordinates would otherwise land in the wrong spot.
+              const rect = el.getBoundingClientRect();
+              const scale = Math.max(rect.width / el.videoWidth, rect.height / el.videoHeight);
+              const offsetX = (rect.width - el.videoWidth * scale) / 2;
+              const offsetY = (rect.height - el.videoHeight * scale) / 2;
+              setBarcodeBox({
+                left: hit.boundingBox.x * scale + offsetX,
+                top: hit.boundingBox.y * scale + offsetY,
+                width: hit.boundingBox.width * scale,
+                height: hit.boundingBox.height * scale
+              });
+            }
+            cancelled = true;
+            barcodeResult(hit.rawValue);
+            return;
+          }
+          setBarcodeBox(null);
+          raf = requestAnimationFrame(scan);
+        }).catch(() => { if (!cancelled) raf = requestAnimationFrame(scan); });
+      };
+      timeoutId = window.setTimeout(() => { raf = requestAnimationFrame(scan); }, 620);
+      return () => { cancelled = true; window.clearTimeout(timeoutId); cancelAnimationFrame(raf); setBarcodeBox(null); };
+    }
+
     const reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const SCAN_WIDTH = 640;
+    const SCAN_WIDTH = 900;
     const tick = () => {
       if (cancelled) return;
       const el = video.current;
@@ -390,7 +443,7 @@ export default function Home() {
           if (result && !cancelled) { cancelled = true; barcodeResult(result.getText()); return; }
         } catch { /* no barcode in this frame yet — keep scanning */ }
       }
-      timeoutId = window.setTimeout(tick, 90);
+      timeoutId = window.setTimeout(tick, 60);
     };
     // Waits out the mode-switch CSS transition before the decode loop starts competing for
     // the main thread — starting it immediately was still enough to make the transition (which
@@ -557,7 +610,7 @@ export default function Home() {
   return <main className="app-shell"><section className={`camera-screen mode-${mode} ${cameraReady ? "camera-active" : ""}`}><video ref={video} muted playsInline className="camera-feed" /><div className="camera-shade" />
     <header><div className="wordmark"><img className="wordmark-icon" src="/logo" alt="" />Viva</div><div className="header-actions">{torchSupported && <button className={`torch ${torchOn ? "on" : ""}`} onClick={toggleTorch} aria-label="Toggle flash"><Flashlight size={18} /></button>}<button className="help" onClick={() => setHelpOpen(true)} aria-label="Help"><CircleHelp size={20} /></button></div></header>
     <div className="top-copy"><h1 key={mode}>{mode === "food" ? "Tap to scan food" : "Hold barcode in frame"}</h1></div>
-    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && !loading && cameraReady && <div className="scan-beam" />}{mode === "food" && loading && captureState === "pulse" && <div className="scan-beam scan-beam-once" />}{loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse")) && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
+    <div className={`focus-frame ${mode === "barcode" ? "barcode-frame" : ""}`}><i /><i /><i /><i />{mode === "barcode" && !loading && cameraReady && <div className="scan-beam" />}{mode === "food" && loading && captureState === "pulse" && <div className="scan-beam scan-beam-once" />}{loading && (mode === "barcode" || (mode === "food" && captureState !== "pulse")) && <div className="scan-progress"><LoaderCircle className="spin scan-progress-icon" size={56} /></div>}</div>{mode === "barcode" && !loading && barcodeBox && <div className="barcode-box" style={{ left: barcodeBox.left, top: barcodeBox.top, width: barcodeBox.width, height: barcodeBox.height }} />}{!cameraReady && !cameraError && <div className="camera-empty"><div className="food-glow">🥗</div><p>Point, scan, understand.</p></div>}{cameraError && <div className="camera-error">{cameraError}</div>}
     <div className="bottom-panel"><div className="mode-switch" ref={modeSwitchRef}>{modeIndicator.ready && <div className="mode-switch-indicator" style={{ left: modeIndicator.left, width: modeIndicator.width }} />}<button data-mode="food" className={mode === "food" ? "selected" : ""} onClick={() => changeMode("food")}><Camera size={17} /> Food</button><button data-mode="barcode" className={mode === "barcode" ? "selected" : ""} onClick={() => changeMode("barcode")}><Barcode size={18} /> Barcode</button></div><div className="scan-actions"><button className="gallery" onClick={() => imageInput.current?.click()} aria-label="Choose photo"><ImagePlus size={22} /></button><button className="shutter" onClick={() => mode === "food" && takeFoodScan()} aria-label="Scan"><span key={mode}>{mode === "barcode" ? <ScanLine size={31} /> : <Camera size={30} />}</span></button><button className="flip" onClick={() => { setFacing(v => v === "environment" ? "user" : "environment"); }} aria-label="Switch camera"><SwitchCamera size={22} /></button></div></div>
   </section><input ref={imageInput} type="file" accept="image/*" hidden onChange={e => file(e.target.files?.[0])} />
   {!loading && (result || error) && <div className={`result-sheet${sheetClosing ? " closing" : ""}`}><div className="sheet-card"><button className="close-sheet" onClick={closeResult}><X size={20} /></button>{result && <button className="chat-fab" onClick={() => setChatOpen(true)} aria-label="Ask about this scan"><MessageCircle size={22} /></button>}{error && !result &&<div className="scan-state"><Info size={37} /><h2>That didn’t scan</h2><p>{error}</p><button className="retry" onClick={scanAnotherFood}>Try again</button></div>}{result && <div className="result-content" ref={resultContentRef}><div className="result-photo-wrap"><div className="result-photo-banner"><Thumb src={result.image || fallbackFoodImage(result.name)} fallback={fallbackFoodImage(result.name)} alt={result.name} eager /></div><div className={`score-ring grade-${grade}`}><b>{displayScore}</b><small>/ 100</small><em>{result.grade}</em></div></div><div className="result-title-block"><p>{result.category || "FOOD"}{result.meta ? ` · ${result.meta}` : ""}</p><h2>{result.name}</h2><span>{result.summary}</span></div>{isPoor && concernsBlock}<div className="nutrition-row">{result.facts?.map((fact, i) => <button type="button" key={`${fact.label}-${i}`} onClick={() => setNutrientDetail(fact)}><b>{fact.value}</b><span>{fact.label}</span>{fact.range && <i className={`range-bar bucket-${fact.range.bucket}${fact.range.highIsGood ? " range-bar-reverse" : ""}`}><em style={{ left: `${fact.range.positionPct}%` }} /></i>}</button>)}</div>{result.breakdown && <div className="score-breakdown"><strong>Score breakdown</strong><div className="breakdown-row"><span>Nutrition quality</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.nutrition.score}%` }} /></i><b>{result.breakdown.nutrition.score}</b></div><div className="breakdown-row"><span>Additives</span><i className="breakdown-bar"><em style={{ width: `${result.breakdown.additives.applicable ? result.breakdown.additives.score : 0}%` }} /></i><b>{result.breakdown.additives.applicable ? result.breakdown.additives.score : "—"}</b></div><div className="breakdown-row"><span>Organic bonus</span><i className="breakdown-bar"><em style={{ width: result.breakdown.bonus.organic ? "100%" : "0%" }} /></i><b>{result.breakdown.bonus.organic ? "Yes" : "—"}</b></div><p className="breakdown-weights">The score above is based on nutrition alone, so it always matches what you see before opening a product. Additives and organic status are shown here for context.</p></div>}{result.breakdown?.additives.applicable && <div className="additives-section"><strong>Ingredients checked</strong>{result.breakdown.additives.items.length ? <div className="additive-list">{result.breakdown.additives.items.map((a, i) => <button key={`${a.name}-${i}`} type="button" className={`additive-flag risk-${a.risk}`} onClick={() => setAdditiveDetail(a)}><i className="risk-dot" /><div><b>{a.name}</b><span>{a.note}</span></div><ChevronRight size={16} className="additive-flag-chevron" /></button>)}</div> : <p className="additive-clear">No concerning additives detected in the ingredient list.</p>}</div>}{(result.highlights?.length || (!isPoor && result.concerns?.length) || result.alternatives?.length) ? <div className="ai-insights">{result.highlights?.length ? <div className="insights">{result.highlights.map((item, i) => <p key={i}><i>✓</i>{item}</p>)}</div> : null}{!isPoor ? concernsBlock : null}{(() => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { enrichAlternativesWithImages } from "../../../lib/openfoodfacts";
-import { gradeForScore, nutrientRange, toNumber, SCORING_RUBRIC, type ScoreBreakdown } from "../../../lib/nutrition";
+import { gradeForScore, nutrientRange, toNumber, additivesScoreFromFlags, SCORING_RUBRIC, type AdditiveFlag, type AdditiveRisk, type ScoreBreakdown } from "../../../lib/nutrition";
 import { resolveModel } from "../../../lib/ai-model";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const maxDuration = 30;
 
 const system = `You are Viva, a careful nutrition assistant.
 Return ONLY valid JSON with this exact shape:
-{"visible":boolean,"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string"}.
+{"visible":boolean,"reasoning":"one short internal sentence weighing the nutrition facts before you commit to a score","name":"string","category":"string","score":number,"summary":"one helpful sentence","calories":number,"protein":number,"carbs":number,"fat":number,"sugar_g":number,"sodium_mg":number,"sat_fat_g":number,"fiber_g":number,"highlights":["string","string"],"concerns":["string"],"alternatives":["string","string"],"caution":"string","ingredients_visible":boolean,"additives":[{"name":"string","risk":"green"|"yellow"|"orange"|"red","note":"one short reason, under 12 words","detail":"2-3 sentences: what it is / why it's used in food, then what the risk concern actually is (or why it's considered safe)"}]}.
 Fill "reasoning" first, before deciding the score — briefly note the 2-3 factors that matter most for this specific food, then let the score follow from that.
 Rules:
 - Set visible to false if the photo does NOT clearly show a specific, identifiable food or packaged product — e.g. it's blank, black, too dark, blurry, or shows something unrelated to food. In that case set every other field to an empty/zero default and do not guess a specific dish — never invent a plausible-sounding food that isn't actually shown. Only set visible to true when you can genuinely identify what's in the photo.
@@ -18,7 +18,9 @@ Rules:
 - ${SCORING_RUBRIC}
 - Do not include a "grade" field — it is computed from the score.
 - Keep highlights and concerns short and concrete, max 2-3 each — only include a concern that's genuinely notable.
-- Alternatives must be realistic healthier swaps for the same food type, max 3.`;
+- Alternatives must be realistic healthier swaps for the same food type, max 3.
+- "ingredients_visible": true ONLY if an actual printed ingredients list on packaging is legible enough in the photo to actually read specific ingredient names off it (not just a nutrition facts panel, and not a guess at what a homemade or unpackaged dish probably contains). Home-cooked meals, produce, restaurant plates, and any photo where the ingredients text is blurry/cut off/too small to read must get ingredients_visible:false and additives:[].
+- When ingredients_visible is true, scan the ingredients you actually read for real food additives (E-numbers, preservatives, artificial colors/sweeteners, emulsifiers, stabilizers) — skip plain foods, water, spices, and basic ingredients like flour or salt. Classify each by mainstream food-safety consensus (the kind of evidence EFSA/IARC review): "red" = credible evidence of meaningful health risk (e.g. potassium bromate, BHA/BHT, certain azo dyes, some nitrites/nitrates); "orange" = moderate/uncertain-but-real concern; "yellow" = limited/low-level concern; "green" = widely regarded as safe (e.g. citric acid, ascorbic acid, pectin, lecithin, natural flavors). If nothing notable, return an empty array — never invent an ingredient you didn't actually read off the package.`;
 
 export async function POST(request: Request) {
   const { image } = await request.json();
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
       // Deterministic (or as close as the provider allows): the same photo of the same food
       // scanned twice should give the same score, not a different one each time.
       temperature: 0,
-      max_tokens: 620,
+      max_tokens: 900,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -100,12 +102,28 @@ export async function POST(request: Request) {
       { label: "Fiber", value: `${fiber ? fiber.toFixed(1) : "0"}g`, range: nutrientRange("fiber", fiber) }
     ];
 
-    // A photo has no ingredient list to check for additives and no reliable organic signal,
-    // so those two-thirds of the Yuka-style breakdown aren't derivable here — only the
-    // nutrition third is shown, and the UI explains why the rest is barcode-only.
+    // A photo has no reliable organic signal, so that third of the Yuka-style breakdown never
+    // applies here. Additives DO apply when the photo actually shows a legible ingredients
+    // list on packaging (ingredients_visible) — same risk-flag detail as a barcode scan — but
+    // fall back to not-applicable for home-cooked/unpackaged food the same as before.
+    const VALID_RISKS = new Set(["green", "yellow", "orange", "red"]);
+    const additives: AdditiveFlag[] = Array.isArray(parsed.additives)
+      ? parsed.additives
+          .filter((item: unknown): item is { name: unknown; risk: unknown; note: unknown; detail: unknown } => !!item && typeof item === "object")
+          .map((item: { name: unknown; risk: unknown; note: unknown; detail: unknown }) => ({
+            name: typeof item.name === "string" ? item.name : "",
+            risk: (VALID_RISKS.has(item.risk as string) ? item.risk : "green") as AdditiveRisk,
+            note: typeof item.note === "string" ? item.note : "",
+            detail: typeof item.detail === "string" ? item.detail : ""
+          }))
+          .filter((item: AdditiveFlag) => item.name)
+          .slice(0, 6)
+      : [];
+    const ingredientsVisible = parsed.ingredients_visible === true;
+
     const breakdown: ScoreBreakdown = {
       nutrition: { score },
-      additives: { score: 100, items: [], applicable: false },
+      additives: { score: ingredientsVisible ? additivesScoreFromFlags(additives) : 100, items: ingredientsVisible ? additives : [], applicable: ingredientsVisible },
       bonus: { organic: false }
     };
 

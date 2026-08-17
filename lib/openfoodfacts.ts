@@ -94,6 +94,17 @@ const looksLikeFood = (categoriesTags: unknown): boolean => {
   return !categoriesTags.some((tag) => typeof tag === "string" && NON_FOOD_CATEGORY_PATTERN.test(tag));
 };
 
+// Stopwords common enough in food product names that sharing one proves nothing about whether
+// two names refer to related products.
+const NAME_STOPWORDS = new Set(["with", "and", "from", "your", "their", "than", "original", "classic", "natural", "flavor", "flavour", "style"]);
+const significantWords = (s: string): string[] =>
+  s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !NAME_STOPWORDS.has(w));
+const namesOverlap = (a: string, b: string): boolean => {
+  const wordsA = new Set(significantWords(a));
+  if (!wordsA.size) return true; // nothing meaningful to compare against — don't block on it
+  return significantWords(b).some((w) => wordsA.has(w));
+};
+
 const categoryOverlap = (a: unknown, b: unknown) => {
   const categoriesA = Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : [];
   const categoriesB = Array.isArray(b) ? b.filter((x): x is string => typeof x === "string") : [];
@@ -242,15 +253,19 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
-      // Picks the first result (in the search's own relevance order) that both has a photo
-      // AND actually looks like a food product — previously took the first result with ANY
-      // photo regardless of relevance or category, which could land on an unrelated
-      // cosmetics/personal-care product that happened to share a word with the food name.
+      // Picks the first result (in the search's own relevance order) that has a photo, actually
+      // looks like a food product, AND whose own name genuinely overlaps with the AI's
+      // suggested name — OFF's free-text relevance ranking can and does return results that
+      // share barely anything with the query (e.g. a "peanut butter" suggestion matching a
+      // "lemon cream pie" listing), which used to get accepted as long as it had a photo. That
+      // produced tiles that said one thing and opened a completely different product on tap.
       const withImage = products.find((item) => {
         const countries = Array.isArray(item.countries_tags) ? item.countries_tags : [];
         if (item.lang !== "en" || !countries.includes("en:united-states")) return false;
-        return ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url)) &&
-          looksLikeFood(item.categories_tags);
+        const hasPhoto = ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url));
+        if (!hasPhoto || !looksLikeFood(item.categories_tags)) return false;
+        const productName = (typeof item.product_name_en === "string" && item.product_name_en) || (typeof item.product_name === "string" && item.product_name) || "";
+        return namesOverlap(name, productName);
       });
       const rawOffImage = withImage
         ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
@@ -262,7 +277,13 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
       const code = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
       const grade = withImage ? gradeFromNutriments((withImage.nutriments || {}) as Record<string, unknown>, withImage.nova_group) : "?";
       const gradeOut = grade === "?" ? undefined : grade;
-      if (rawOffImage) return { name, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade: gradeOut };
+      // Display the matched product's OWN name rather than the AI's freeform suggestion once a
+      // match exists — guarantees the tile's text always matches what actually opens, instead
+      // of the AI's phrasing potentially drifting from whichever real product got matched.
+      const displayName = withImage
+        ? (typeof withImage.product_name_en === "string" && withImage.product_name_en.trim()) || (typeof withImage.product_name === "string" && withImage.product_name.trim()) || name
+        : name;
+      if (rawOffImage) return { name: displayName, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade: gradeOut };
 
       const wikiImage = await wikimediaImageFor(name).catch(() => "");
       return { name, image: wikiImage, code, grade: gradeOut };

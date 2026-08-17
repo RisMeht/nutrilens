@@ -111,6 +111,11 @@ header{padding-top:50px}
 .focus-frame{--beam-amp:60px}
 .barcode-frame{--beam-amp:36px}
 .scan-beam{left:50%;transform:translateX(-50%)}
+/* Live box drawn around whatever the native BarcodeDetector currently sees, positioned in
+   display pixels computed straight off the video element (see the decode-loop effect) — a
+   quick pulse/fade-in per frame it's redrawn keeps it feeling responsive rather than static. */
+.barcode-box{position:absolute;z-index:2;border:3px solid #baff59;border-radius:10px;box-shadow:0 0 0 2000px #06150d40,0 0 18px #baff5999;pointer-events:none;animation:barcode-box-in .15s ease}
+@keyframes barcode-box-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes beam{0%,100%{transform:translateX(-50%) translateY(calc(-1 * var(--beam-amp)));opacity:.25}50%{transform:translateX(-50%) translateY(var(--beam-amp));opacity:1}}
 /* A live food-photo capture plays the beam exactly once (up, then back down) as visible
    confirmation the shot registered, then hands off to the spinner — rather than looping the
