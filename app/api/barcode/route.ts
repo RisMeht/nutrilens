@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchOpenFoodFactsProduct, findBetterSwaps, productImageUrl, wikimediaImageFor } from "../../../lib/openfoodfacts";
+import { fetchOpenFoodFactsProduct, findBetterSwaps, fullProductName, productImageUrl, wikimediaImageFor } from "../../../lib/openfoodfacts";
 import { buildHealthScore, nutrientPer100g, nutrientRange, parseServing, toNumber, type ScoreBreakdown } from "../../../lib/nutrition";
 
 export async function GET(request: Request) {
@@ -104,35 +104,39 @@ export async function GET(request: Request) {
   if (display.satFat >= 5 * scale) concerns.push(`High saturated fat: ${display.satFat.toFixed(1)}g per ${basisLabel}.`);
   if (additivesCount >= 3) concerns.push(`${additivesCount} additives listed.`);
 
-  const productName =
-    (typeof product.product_name === "string" && product.product_name.trim()) ||
-    (typeof product.product_name_en === "string" && product.product_name_en.trim()) ||
-    "Scanned product";
+  const productName = fullProductName(product);
 
   const alternatives = (
     await findBetterSwaps({
       productName,
       productCode: code,
       categories: product.categories_tags,
+      scannedScore: score,
       sugarPer100g: per100.sugar,
       sodiumMgPer100g: per100.sodiumMg,
       satFatPer100g: per100.satFat,
       energyPer100g: per100.energy
     })
-  ).slice(0, 3);
+  ).slice(0, 4);
 
+  // Every fact carries its own basis label ("per 42g serving" / "per 100g") rather than that
+  // living only in the top summary sentence — easy to miss there, and numbers shown without it
+  // read as per-serving even when a missing label size forced the per-100g fallback (a
+  // meaningfully different, often much larger, number). Shown on every fact, not just the
+  // per-100g fallback case, so the basis is never ambiguous either way.
+  const basis = hasServing ? `per ${basisLabel}` : "per 100g";
   // Carbs and fat get no range: Nutri-Score itself only scores saturated fat and sugar
   // specifically, never total carbs or total fat, so a colored good/bad slider for either
   // would be asserting a threshold that doesn't actually exist.
   const facts = [
-    { label: "Calories", value: `${Math.round(display.energy)}`, range: nutrientRange("calories", display.energy, rangeScale) },
-    { label: "Protein", value: `${display.protein ? display.protein.toFixed(1) : "0"}g`, range: nutrientRange("protein", display.protein, rangeScale) },
-    { label: "Carbs", value: `${display.carbs ? display.carbs.toFixed(1) : "0"}g` },
-    { label: "Fat", value: `${display.fat ? display.fat.toFixed(1) : "0"}g` },
-    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g`, range: nutrientRange("sugar", display.sugar, rangeScale) },
-    { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg`, range: nutrientRange("sodiumMg", display.sodiumMg, rangeScale) },
-    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g`, range: nutrientRange("satFat", display.satFat, rangeScale) },
-    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g`, range: nutrientRange("fiber", display.fiber, rangeScale) }
+    { label: "Calories", value: `${Math.round(display.energy)}`, basis, range: nutrientRange("calories", display.energy, rangeScale) },
+    { label: "Protein", value: `${display.protein ? display.protein.toFixed(1) : "0"}g`, basis, range: nutrientRange("protein", display.protein, rangeScale) },
+    { label: "Carbs", value: `${display.carbs ? display.carbs.toFixed(1) : "0"}g`, basis },
+    { label: "Fat", value: `${display.fat ? display.fat.toFixed(1) : "0"}g`, basis },
+    { label: "Sugar", value: `${display.sugar ? display.sugar.toFixed(1) : "0"}g`, basis, range: nutrientRange("sugar", display.sugar, rangeScale) },
+    { label: "Sodium", value: `${Math.round(display.sodiumMg)}mg`, basis, range: nutrientRange("sodiumMg", display.sodiumMg, rangeScale) },
+    { label: "Sat fat", value: `${display.satFat ? display.satFat.toFixed(1) : "0"}g`, basis, range: nutrientRange("satFat", display.satFat, rangeScale) },
+    { label: "Fiber", value: `${display.fiber ? display.fiber.toFixed(1) : "0"}g`, basis, range: nutrientRange("fiber", display.fiber, rangeScale) }
   ];
 
   // Yuka's published methodology is three parts — nutritional quality (60%), additive risk
@@ -154,9 +158,10 @@ export async function GET(request: Request) {
   const meta = [brand, quantity].filter(Boolean).join(" · ");
 
   // Most products have their own Open Food Facts photo; for the rare one that doesn't,
-  // fall back to a real Wikimedia Commons photo (searched by brand + name) rather than
-  // going straight to the generated placeholder.
-  const image = productImageUrl(product) || (await wikimediaImageFor(`${brand} ${productName}`.trim()).catch(() => ""));
+  // fall back to a real Wikimedia Commons photo rather than going straight to the generated
+  // placeholder. productName already includes the brand (see fullProductName) so it isn't
+  // prepended again here.
+  const image = productImageUrl(product) || (await wikimediaImageFor(productName).catch(() => ""));
 
   return NextResponse.json({
     name: productName,

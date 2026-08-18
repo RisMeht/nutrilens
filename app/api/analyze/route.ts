@@ -18,7 +18,7 @@ Rules:
 - ${SCORING_RUBRIC}
 - Do not include a "grade" field — it is computed from the score.
 - Keep highlights and concerns short and concrete, max 2-3 each — only include a concern that's genuinely notable.
-- Alternatives must be realistic healthier swaps for the same food type, max 3.
+- Alternatives must each be a REAL, specific, branded packaged product actually sold in the US (e.g. "Quest Chocolate Peanut Butter Protein Bar", never a generic description like "a healthier snack" — a generic name can't be looked up against a real database afterward), the same type/category of food as what's shown, and a genuinely, meaningfully healthier choice. Max 3, and skip this entirely (return an empty array) rather than naming something you're not confident is a real, distinct product.
 - "ingredients_visible": true ONLY if an actual printed ingredients list on packaging is legible enough in the photo to actually read specific ingredient names off it (not just a nutrition facts panel, and not a guess at what a homemade or unpackaged dish probably contains). Home-cooked meals, produce, restaurant plates, and any photo where the ingredients text is blurry/cut off/too small to read must get ingredients_visible:false and additives:[].
 - When ingredients_visible is true, scan the ingredients you actually read for real food additives (E-numbers, preservatives, artificial colors/sweeteners, emulsifiers, stabilizers) — skip plain foods, water, spices, and basic ingredients like flour or salt. Classify each by mainstream food-safety consensus (the kind of evidence EFSA/IARC review): "red" = credible evidence of meaningful health risk (e.g. potassium bromate, BHA/BHT, certain azo dyes, some nitrites/nitrates); "orange" = moderate/uncertain-but-real concern; "yellow" = limited/low-level concern; "green" = widely regarded as safe (e.g. citric acid, ascorbic acid, pectin, lecithin, natural flavors). If nothing notable, return an empty array — never invent an ingredient you didn't actually read off the package.`;
 
@@ -74,8 +74,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "We couldn't identify a food item in that photo. Try a clearer, well-lit shot." }, { status: 422 });
     }
 
-    const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
     const score = typeof parsed.score === "number" && Number.isFinite(parsed.score) ? Math.max(0, Math.min(100, Math.round(parsed.score))) : 0;
+    const alternatives = await enrichAlternativesWithImages(parsed.alternatives, { scannedScore: score, originalName: typeof parsed.name === "string" ? parsed.name : undefined });
 
     const calories = toNumber(parsed.calories);
     const protein = toNumber(parsed.protein);

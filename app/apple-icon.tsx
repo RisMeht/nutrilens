@@ -11,9 +11,10 @@ export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
 const RENDER = 3;
-const FOOD_PATH_1 = "M2.27 21.7s9.87-3.5 12.73-6.36a4.5 4.5 0 0 0-6.36-6.37C5.77 11.84 2.27 21.7 2.27 21.7zM8.64 14l-2.05-2.04M15.34 15l-2.46-2.46";
-const FOOD_PATH_2 = "M22 9s-1.33-2-3.5-2C16.86 7 15 9 15 9s1.33 2 3.5 2S22 9 22 9z";
-const FOOD_PATH_3 = "M15 2s-2 1.33-2 3.5S15 9 15 9s2-1.84 2-3.5C17 3.33 15 2 15 2z";
+const FOOD_PATH_1 = "M2 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z";
+const FOOD_PATH_2 = "M12 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z";
+const FOOD_PATH_3 = "M7 14c3.22-2.91 4.29-8.75 5-12 1.66 2.38 4.94 9 5 12";
+const FOOD_PATH_4 = "M22 9c-4.29 0-7.14-2.33-10-7 5.71 0 10 4.67 10 7Z";
 
 export default function AppleIcon() {
   return new ImageResponse(
@@ -23,6 +24,7 @@ export default function AppleIcon() {
           <path d={FOOD_PATH_1} />
           <path d={FOOD_PATH_2} />
           <path d={FOOD_PATH_3} />
+          <path d={FOOD_PATH_4} />
         </svg>
         <div style={{ position: "absolute", top: 22 * RENDER, left: 22 * RENDER, width: 40 * RENDER, height: 40 * RENDER, borderTop: `${9 * RENDER}px solid #153e20`, borderLeft: `${9 * RENDER}px solid #153e20`, borderRadius: `${12 * RENDER}px 0 0 0` }} />
         <div style={{ position: "absolute", top: 22 * RENDER, right: 22 * RENDER, width: 40 * RENDER, height: 40 * RENDER, borderTop: `${9 * RENDER}px solid #153e20`, borderRight: `${9 * RENDER}px solid #153e20`, borderRadius: `0 ${12 * RENDER}px 0 0` }} />

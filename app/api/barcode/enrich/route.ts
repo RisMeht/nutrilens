@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct } from "../../../../lib/openfoodfacts";
+import { enrichAlternativesWithImages, fetchOpenFoodFactsProduct, fullProductName } from "../../../../lib/openfoodfacts";
 import {
   additivesScoreFromFlags,
   buildHealthScore,
@@ -24,7 +24,7 @@ Rules:
 - When highlights/concerns cite a specific amount, cite the nutrients_per_serving numbers (that's what's shown on screen) using the given serving label — never cite the per-100g numbers directly, and never invent a serving size other than the one given.
 - Use only the provided nutrition and ingredient facts. Do not invent nutrients or medical claims.
 - Keep highlights/concerns short and concrete, max 3 each. Only include a concern that's genuinely notable — don't pad the list.
-- Alternatives must be realistic healthier packaged swaps for the same type of product, max 3.
+- Alternatives must each be a REAL, specific, branded product actually sold in the US — a real product name like "Quest Chocolate Peanut Butter Protein Bar", never a generic description like "protein bar" or "a healthier snack" (a generic name can't be looked up against a real database afterward). Each one must be the same type/category of product as the one scanned (a protein bar gets other protein bars, not a different food entirely) and a genuinely, meaningfully healthier choice — not just a different brand of the same thing. Max 3, and skip this entirely (return an empty array) rather than naming something you're not confident is a real, distinct product.
 - For "additives": scan ingredients_text for actual food additives (E-numbers, preservatives, artificial colors/sweeteners, emulsifiers, stabilizers) — skip plain foods, water, spices, and basic ingredients like flour or salt. Classify each by mainstream food-safety consensus (the kind of evidence EFSA/IARC review): "red" = credible evidence of meaningful health risk (e.g. potassium bromate, BHA/BHT, certain azo dyes, some nitrites/nitrates); "orange" = moderate/uncertain-but-real concern (e.g. some phosphate or carrageenan-type additives); "yellow" = limited/low-level concern; "green" = widely regarded as safe (e.g. citric acid, ascorbic acid, pectin, lecithin, natural flavors). If ingredients_text is empty or has no notable additives, return an empty array — never invent an ingredient list. "detail" expands on "note" for a reader who taps into it — plain language, factual, no medical advice or scare language beyond what the evidence supports.`;
 
 export async function POST(request: Request) {
@@ -60,9 +60,10 @@ export async function POST(request: Request) {
   const nutrients_per_serving = Object.fromEntries(Object.entries(nutrients_per_100g).map(([key, value]) => [key, Math.round(value * scale * 10) / 10]));
 
   const ingredientsText = (product.ingredients_text_en || product.ingredients_text || "").toString();
+  const productName = fullProductName(product);
   const context = {
     barcode: code,
-    name: product.product_name || product.product_name_en || "Scanned product",
+    name: productName,
     categories: product.categories || "",
     ingredients_text: ingredientsText,
     nova_group: product.nova_group || null,
@@ -127,7 +128,7 @@ export async function POST(request: Request) {
   try {
     const content = data.choices?.[0]?.message?.content;
     const parsed = JSON.parse(content ?? "{}");
-    const alternatives = await enrichAlternativesWithImages(parsed.alternatives);
+    const alternatives = await enrichAlternativesWithImages(parsed.alternatives, { excludeCode: code, scannedScore: nutritionScore, originalName: productName });
 
     const VALID_RISKS = new Set(["green", "yellow", "orange", "red"]);
     const additives: AdditiveFlag[] = Array.isArray(parsed.additives)

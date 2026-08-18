@@ -300,6 +300,12 @@ header{padding-top:max(50px,env(safe-area-inset-top))}
    background/padding/centering the old plain <div> cells had, plus a button reset since browser
    button chrome doesn't match a plain grid cell by default. */
 .nutrition-row button{background:#e8eee5;padding:13px 8px;text-align:center;position:relative;padding-bottom:19px;border:0;cursor:pointer;font:inherit;color:inherit;display:block;width:100%;transition:background .15s ease,transform .15s ease}
+/* Every nutrition number now states its own basis ("per 42g serving" / "per 100g") rather than
+   that living only in a single summary sentence elsewhere on the screen — a number shown with
+   no annotation reads as per-serving even when a missing label size forced the per-100g
+   fallback, which is a meaningfully different (often much larger) number. */
+.fact-basis{display:block;font-size:9px;font-weight:600;color:#6f8169;text-transform:uppercase;letter-spacing:.03em;margin-top:1px}
+.nutrient-detail-value small{display:block;font-size:12px;font-weight:600;color:#6f8169;text-transform:uppercase;letter-spacing:.03em;margin-top:2px}
 .nutrition-row button:hover,.nutrition-row button:active{background:#dde6d8}
 .nutrition-row button:active{transform:scale(.96)}
 .range-bar{position:absolute;left:12px;right:12px;bottom:9px;height:4px;border-radius:2px;background:linear-gradient(90deg,#7fc768,#e8c765,#e2895f);display:block}

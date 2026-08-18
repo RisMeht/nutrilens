@@ -10,15 +10,18 @@ import { buildHealthScore, toNumber } from "./nutrition";
 const hasCoreNutriments = (nutriments: Record<string, unknown>): boolean =>
   ["energy-kcal_100g", "energy_kcal", "sugars_100g", "fat_100g", "proteins_100g"].some((key) => nutriments[key] !== undefined && nutriments[key] !== null);
 
-export const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): string => {
-  if (!hasCoreNutriments(nutriments)) return "?";
+// Needed wherever a swap candidate's numeric score has to be compared against the scanned
+// product's own score (see findBetterSwaps/enrichAlternativesWithImages below) — grade alone
+// only sorts into 5 buckets, too coarse to tell "genuinely better" from "roughly the same".
+export const scoreAndGradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): { score: number; grade: string } => {
+  if (!hasCoreNutriments(nutriments)) return { score: 0, grade: "?" };
   const sodiumMg = toNumber(nutriments.sodium_100g) * 1000 || (toNumber(nutriments.salt_100g) / 2.5) * 1000;
   const fruitVegPct = toNumber(
     nutriments["fruits-vegetables-nuts-estimate-from-ingredients_100g"] ??
       nutriments["fruits-vegetables-nuts_100g"] ??
       nutriments["fruits-vegetables-legumes-estimate-from-ingredients_100g"]
   );
-  const { grade } = buildHealthScore({
+  return buildHealthScore({
     sugarPer100g: toNumber(nutriments.sugars_100g),
     sodiumMgPer100g: sodiumMg,
     satFatPer100g: toNumber(nutriments["saturated-fat_100g"]),
@@ -28,8 +31,33 @@ export const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGro
     novaGroup: toNumber(novaGroupRaw),
     fruitVegPct
   });
-  return grade;
 };
+export const gradeFromNutriments = (nutriments: Record<string, unknown>, novaGroupRaw: unknown): string => scoreAndGradeFromNutriments(nutriments, novaGroupRaw).grade;
+
+// Open Food Facts' product_name is frequently just the flavor/variant fragment on its own —
+// e.g. "Chocolate Fudge" for a product whose real full name is "Barebell Chocolate Fudge
+// Protein Bar" — missing both the brand and the actual product type. That fragment is what
+// used to get shown as the product's name AND used as the literal search query for Better
+// Swaps, so a vague one/two-word query pulled back whatever else on Open Food Facts happens to
+// share that one flavor word, in any category (a "chocolate fudge" cake, sauce, ice cream —
+// anything). Prefixing the brand whenever it isn't already part of the name fixes both the
+// display and the search relevance at the source, rather than trying to compensate downstream.
+export const fullProductName = (product: Record<string, unknown>): string => {
+  const name = (typeof product.product_name === "string" && product.product_name.trim()) || (typeof product.product_name_en === "string" && product.product_name_en.trim()) || "";
+  const brand = typeof product.brands === "string" ? product.brands.trim().split(",")[0].trim() : "";
+  if (!name) return brand || "Scanned product";
+  if (!brand || name.toLowerCase().includes(brand.toLowerCase())) return name;
+  return `${brand} ${name}`;
+};
+
+// A swap only earns the "better" label if it's genuinely, meaningfully healthier than the
+// scanned product's own score — not just barely ahead, which the score formula's normal
+// rounding/estimation noise could produce for two near-identical products. Within a few points
+// either side counts as "about the same" (alternate, not better); meaningfully worse gets
+// dropped entirely rather than shown as if it were a real option.
+const SCORE_TIER = { better: 3, worse: -3 } as const;
+const tierFromScoreDelta = (delta: number): "better" | "alternate" | null =>
+  delta >= SCORE_TIER.better ? "better" : delta >= SCORE_TIER.worse ? "alternate" : null;
 
 const OFF_BASE = "https://world.openfoodfacts.org";
 // Open Food Facts' legacy /cgi/search.pl endpoint (used here until now) currently returns a
@@ -127,16 +155,11 @@ const categoryOverlap = (a: unknown, b: unknown) => {
   return categoriesB.reduce((count, item) => (setA.has(item) ? count + 1 : count), 0);
 };
 
-const nutriRank = (grade: unknown) => {
-  const value = typeof grade === "string" ? grade.toLowerCase() : "";
-  const map: Record<string, number> = { a: 1, b: 2, c: 3, d: 4, e: 5 };
-  return map[value] ?? 6;
-};
-
 export const findBetterSwaps = async ({
   productName,
   productCode,
   categories,
+  scannedScore,
   sugarPer100g,
   sodiumMgPer100g,
   satFatPer100g,
@@ -145,6 +168,7 @@ export const findBetterSwaps = async ({
   productName: string;
   productCode: string;
   categories: unknown;
+  scannedScore: number;
   sugarPer100g: number;
   sodiumMgPer100g: number;
   satFatPer100g: number;
@@ -196,14 +220,14 @@ export const findBetterSwaps = async ({
       // not just anything with a similar-sounding name.
       const hasCategoryData = Array.isArray(categories) && categories.length > 0 && Array.isArray(item.categories_tags) && item.categories_tags.length > 0;
       if (hasCategoryData && overlapScore === 0) return null;
-      const grade = gradeFromNutriments(nutriments, item.nova_group);
-      const improvement =
-        (sugarPer100g - sugar) * 2 +
-        (sodiumMgPer100g - sodiumMg) / 80 +
-        (satFatPer100g - satFat) * 2 +
-        (energyPer100g - energy) / 80 +
-        (6 - nutriRank(grade)) +
-        overlapScore;
+      const { score: candidateScore, grade } = scoreAndGradeFromNutriments(nutriments, item.nova_group);
+      // Whether this is a "better" or "alternate" swap (or not a swap at all) is decided purely
+      // by comparing the two products' actual scores — not the ad hoc per-nutrient formula this
+      // used before, which could rank a candidate as "improved" from small per-nutrient deltas
+      // that didn't actually add up to a meaningfully different overall score.
+      const delta = candidateScore - scannedScore;
+      const tier = tierFromScoreDelta(delta);
+      if (!tier) return null;
 
       // Prefer the English name field first — with lang:en now required above, product_name
       // itself is usually English too, but product_name_en is the more reliable field when a
@@ -222,10 +246,10 @@ export const findBetterSwaps = async ({
       const similarity = nameSimilarityRatio(productName, name);
       if (similarity === 0 || similarity >= 0.72) return null;
 
-      return { name, image, code, grade: grade === "?" ? undefined : grade, improvement };
+      return { name, image, code, grade: grade === "?" ? undefined : grade, tier, delta };
     })
-    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => Boolean(item && item.improvement > 1.5))
-    .sort((a, b) => b.improvement - a.improvement);
+    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; tier: "better" | "alternate"; delta: number } => item !== null)
+    .sort((a, b) => b.delta - a.delta);
 
   // Open Food Facts' search index can lag or disagree with its own canonical product database
   // — a code showing up in a search hit doesn't guarantee /api/v2/product/<code> actually
@@ -238,9 +262,9 @@ export const findBetterSwaps = async ({
   );
 
   return verified
-    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; improvement: number } => item !== null)
+    .filter((item): item is { name: string; image: string; code: string; grade: string | undefined; tier: "better" | "alternate"; delta: number } => item !== null)
     .slice(0, 4)
-    .map(({ name, image, code, grade }) => ({ name, image, code, grade }));
+    .map(({ name, image, code, grade, tier }) => ({ name, image, code, grade, tier }));
 };
 
 // Free, no-key, legally-clear real photos for generic/home foods that Open Food Facts (mostly
@@ -273,8 +297,14 @@ export const wikimediaImageFor = async (query: string): Promise<string> => {
   return "";
 };
 
-export const enrichAlternativesWithImages = async (alternatives: unknown) => {
-  if (!Array.isArray(alternatives)) return [] as Array<{ name: string; image: string; code?: string; grade?: string }>;
+type EnrichedAlternative = { name: string; image: string; code: string; grade?: string; tier?: "better" | "alternate" };
+
+export const enrichAlternativesWithImages = async (
+  alternatives: unknown,
+  options: { excludeCode?: string; scannedScore?: number; originalName?: string } = {}
+): Promise<EnrichedAlternative[]> => {
+  const { excludeCode, scannedScore, originalName } = options;
+  if (!Array.isArray(alternatives)) return [];
   const names = alternatives
     .map((entry) => {
       if (typeof entry === "string") return entry.trim();
@@ -287,7 +317,7 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
     .slice(0, 4);
 
   const resolved = await Promise.all(
-    names.map(async (name) => {
+    names.map(async (name): Promise<EnrichedAlternative | null> => {
       // Same US-available, English-labeled restriction as findBetterSwaps above — this match's
       // barcode becomes a tappable result (Recs/results-screen swap), so it needs to be a real
       // product someone in the US could actually go buy, not just any global listing that
@@ -301,53 +331,54 @@ export const enrichAlternativesWithImages = async (alternatives: unknown) => {
 
       const response = await withTimeout(fetch(searchUrl, { headers: OFF_HEADERS, next: { revalidate: 86400 } }), 7000).catch(() => null);
       const products: Record<string, unknown>[] = response?.ok ? (await response.json())?.hits ?? [] : [];
-      // Picks the first result (in the search's own relevance order) that has a photo, actually
-      // looks like a food product, AND whose own name genuinely overlaps with the AI's
-      // suggested name — OFF's free-text relevance ranking can and does return results that
-      // share barely anything with the query (e.g. a "peanut butter" suggestion matching a
-      // "lemon cream pie" listing), which used to get accepted as long as it had a photo. That
-      // produced tiles that said one thing and opened a completely different product on tap.
-      const withImage = products.find((item) => {
-        const countries = Array.isArray(item.countries_tags) ? item.countries_tags : [];
-        if (item.lang !== "en" || !countries.includes("en:united-states")) return false;
-        const hasPhoto = ((typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url));
-        if (!hasPhoto || !looksLikeFood(item.categories_tags)) return false;
-        const productName = (typeof item.product_name_en === "string" && item.product_name_en) || (typeof item.product_name === "string" && item.product_name) || "";
-        return namesOverlap(name, productName);
-      });
-      const rawOffImage = withImage
-        ? (typeof withImage.image_front_url === "string" && withImage.image_front_url) ||
-          (typeof withImage.image_front_small_url === "string" && withImage.image_front_small_url) ||
-          ""
-        : "";
-      // The matched OFF product's own barcode, kept so a suggested swap can be opened as a
-      // real full result later (Recommendations) rather than just shown as a static image.
-      // Open Food Facts' search index can surface a code that its own canonical product
-      // endpoint no longer resolves (deleted, merged, or malformed entries stay searchable
-      // after they stop being fetchable) — verifying it here means a tapped swap always opens
-      // instead of silently doing nothing, which is what a stale index entry looked like from
-      // the user's side. A failed verification just drops the code, not the whole swap: the
-      // tile still shows with its real name/photo and falls back to a name search on tap.
-      const rawCode = withImage && typeof withImage.code === "string" ? withImage.code : undefined;
-      const code = rawCode && (await fetchOpenFoodFactsProduct(rawCode)) ? rawCode : undefined;
-      const grade = withImage ? gradeFromNutriments((withImage.nutriments || {}) as Record<string, unknown>, withImage.nova_group) : "?";
-      const gradeOut = grade === "?" ? undefined : grade;
-      // Display the matched product's OWN name rather than the AI's freeform suggestion once a
-      // match exists — guarantees the tile's text always matches what actually opens, instead
-      // of the AI's phrasing potentially drifting from whichever real product got matched.
-      const displayName = withImage
-        ? (typeof withImage.product_name_en === "string" && withImage.product_name_en.trim()) || (typeof withImage.product_name === "string" && withImage.product_name.trim()) || name
-        : name;
-      if (rawOffImage) return { name: displayName, image: toSizedImage(rawOffImage, GRID_IMAGE_SIZE), code, grade: gradeOut };
 
-      const wikiImage = await wikimediaImageFor(name).catch(() => "");
-      return { name, image: wikiImage, code, grade: gradeOut };
+      // Walks the search's own relevance order looking for the first candidate that clears
+      // every bar — not just "has a photo and a related name" (the old check, which used to
+      // accept a result sharing barely anything with the query, e.g. a "peanut butter"
+      // suggestion matching a "lemon cream pie" listing), but also: isn't the same product
+      // already scanned (by barcode, or by being a near-identical name under a different one),
+      // and — when the scanned item's own score is known — isn't actually worse than it. A
+      // candidate that fails any of these just gets skipped in favor of the next one, rather
+      // than immediately settling for a weaker match.
+      for (const item of products) {
+        const countries = Array.isArray(item.countries_tags) ? item.countries_tags : [];
+        if (item.lang !== "en" || !countries.includes("en:united-states")) continue;
+        const rawImage = (typeof item.image_front_url === "string" && item.image_front_url) || (typeof item.image_front_small_url === "string" && item.image_front_small_url) || "";
+        if (!rawImage || !looksLikeFood(item.categories_tags)) continue;
+        const offName = (typeof item.product_name_en === "string" && item.product_name_en) || (typeof item.product_name === "string" && item.product_name) || "";
+        if (!namesOverlap(name, offName)) continue;
+
+        const itemCode = typeof item.code === "string" ? item.code : "";
+        if (!itemCode || itemCode === excludeCode) continue;
+        if (originalName && nameSimilarityRatio(originalName, offName) >= 0.72) continue; // essentially the scanned product itself, just a different barcode
+
+        const nutriments = (item.nutriments || {}) as Record<string, unknown>;
+        const { score: candidateScore, grade } = scoreAndGradeFromNutriments(nutriments, item.nova_group);
+        let tier: "better" | "alternate" | undefined;
+        if (typeof scannedScore === "number") {
+          const computed = tierFromScoreDelta(candidateScore - scannedScore);
+          if (!computed) continue; // meaningfully worse than what was scanned — not a swap worth showing
+          tier = computed;
+        }
+
+        // Open Food Facts' search index can surface a code that its own canonical product
+        // endpoint no longer resolves (deleted, merged, or malformed entries stay searchable
+        // after they stop being fetchable) — verifying it here means a tapped swap always opens
+        // instead of silently doing nothing. Keeps looking at the next candidate rather than
+        // falling back to an unresolvable one, since the whole point is a real, detailed record.
+        const verified = await fetchOpenFoodFactsProduct(itemCode);
+        if (!verified) continue;
+
+        // Display the matched product's OWN name rather than the AI's freeform suggestion —
+        // guarantees the tile's text always matches what actually opens.
+        const displayName = (typeof item.product_name_en === "string" && item.product_name_en.trim()) || (typeof item.product_name === "string" && item.product_name.trim()) || name;
+        return { name: displayName, image: toSizedImage(rawImage, GRID_IMAGE_SIZE), code: itemCode, grade: grade === "?" ? undefined : grade, tier };
+      }
+      return null;
     })
   );
 
-  // If neither Open Food Facts nor Wikimedia has a real photo for a suggested swap, drop it
-  // entirely rather than showing a generated placeholder tile as if it were a real option.
-  return resolved.filter((item) => item.image);
+  return resolved.filter((item): item is EnrichedAlternative => item !== null);
 };
 
 export type BrowseItem = { code: string; name: string; image: string; grade: string };

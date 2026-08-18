@@ -31,10 +31,17 @@ export const hapticTap = () => {
 };
 // Switching tabs/pages (History/Recs/Scan/Top/Search) — iOS's own "selection changed" feedback
 // is a noticeably lighter, quicker tick than an impact style, matching what a picker/segmented
-// control feels like rather than a button press.
+// control feels like rather than a button press. The native implementation only actually
+// produces feedback once a selection "session" exists (its own UISelectionFeedbackGenerator is
+// nil until selectionStart() runs) — calling selectionChanged() on its own, as a one-off tap
+// like a tab switch does, is silently a no-op. Starting, changing, then immediately ending one
+// is the correct way to get a single discrete tick out of it.
 export const hapticSoft = () => {
   if (!isNative() || !getHapticsEnabled()) return;
-  Haptics.selectionChanged().catch(() => {});
+  Haptics.selectionStart()
+    .then(() => Haptics.selectionChanged())
+    .then(() => Haptics.selectionEnd())
+    .catch(() => {});
 };
 // A scan's loading state kicking in (barcode read, or a food photo handed off for analysis).
 export const hapticScanStart = () => {
