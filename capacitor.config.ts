@@ -11,11 +11,11 @@ const config: CapacitorConfig = {
   appName: 'Viva',
   webDir: 'out',
   server: {
-    url: 'https://nurafood.vercel.app',
+    url: 'https://vivascan.vercel.app',
     // The app never navigates to any domain other than its own; this stays intentionally
     // narrow so Capacitor keeps any unexpected external link inside the OS browser instead of
     // loading it into the app's own webview.
-    allowNavigation: ['nurafood.vercel.app']
+    allowNavigation: ['vivascan.vercel.app']
   },
   ios: {
     // 'automatic' (tried briefly) has UIKit add real inset margins around the web content —

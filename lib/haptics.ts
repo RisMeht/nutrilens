@@ -24,10 +24,18 @@ export const setHapticsEnabled = (on: boolean) => {
 // no-op rather than a degraded approximation.
 const isNative = () => typeof window !== "undefined" && !!(window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
 
+// A rejected haptics call (e.g. "Haptics plugin is not implemented on ios", thrown by
+// @capacitor/core when the native plugin isn't actually linked into the built binary) used to
+// be swallowed completely silently — indistinguishable from haptics simply being off. Logging it
+// costs nothing (never surfaces to the user, this app has no visible error UI for it) and turns
+// an invisible failure into something checkable via Safari's Web Inspector (Develop menu > your
+// device > this page, while the app is running) if haptics still don't fire after a rebuild.
+const logHapticFailure = (e: unknown) => { console.warn("[haptics]", e); };
+
 // Regular button taps (flash, help, photo picker) — a light, snappy impact.
 export const hapticTap = () => {
   if (!isNative() || !getHapticsEnabled()) return;
-  Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+  Haptics.impact({ style: ImpactStyle.Light }).catch(logHapticFailure);
 };
 // Switching tabs/pages (History/Recs/Scan/Top/Search) — iOS's own "selection changed" feedback
 // is a noticeably lighter, quicker tick than an impact style, matching what a picker/segmented
@@ -41,15 +49,15 @@ export const hapticSoft = () => {
   Haptics.selectionStart()
     .then(() => Haptics.selectionChanged())
     .then(() => Haptics.selectionEnd())
-    .catch(() => {});
+    .catch(logHapticFailure);
 };
 // A scan's loading state kicking in (barcode read, or a food photo handed off for analysis).
 export const hapticScanStart = () => {
   if (!isNative() || !getHapticsEnabled()) return;
-  Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+  Haptics.impact({ style: ImpactStyle.Medium }).catch(logHapticFailure);
 };
 // A result finishing and appearing on screen.
 export const hapticResult = () => {
   if (!isNative() || !getHapticsEnabled()) return;
-  Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+  Haptics.notification({ type: NotificationType.Success }).catch(logHapticFailure);
 };
