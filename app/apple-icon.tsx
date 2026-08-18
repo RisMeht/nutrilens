@@ -11,13 +11,10 @@ export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
 const RENDER = 3;
-// A single bold circle + leaf (lucide's Citrus icon) reads far more cleanly at actual icon
-// size than the previous Cherry glyph, whose two overlapping circles and crossing stems turned
-// into visual noise once scaled down to a real home-screen icon.
-const FOOD_PATH_1 = "M21.66 17.67a1.08 1.08 0 0 1-.04 1.6A12 12 0 0 1 4.73 2.38a1.1 1.1 0 0 1 1.61-.04z";
-const FOOD_PATH_2 = "M19.65 15.66A8 8 0 0 1 8.35 4.34";
-const FOOD_PATH_3 = "m14 10-5.5 5.5";
-const FOOD_PATH_4 = "M14 17.85V10H6.15";
+const FOOD_PATH_1 = "M2 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z";
+const FOOD_PATH_2 = "M12 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z";
+const FOOD_PATH_3 = "M7 14c3.22-2.91 4.29-8.75 5-12 1.66 2.38 4.94 9 5 12";
+const FOOD_PATH_4 = "M22 9c-4.29 0-7.14-2.33-10-7 5.71 0 10 4.67 10 7Z";
 
 export default function AppleIcon() {
   return new ImageResponse(
